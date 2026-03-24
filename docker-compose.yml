@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  agw:
+    build: .
+    image: openclaw-codeagent-gateway:latest
+    container_name: agw
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./gateway.yaml:/etc/agw/gateway.yaml:ro
+      - agw-data:/data
+      - agw-workspace:/workspace
+    environment:
+      # Tenant token (you define this — any string)
+      - AGW_TOKEN=${AGW_TOKEN:-your-secret-token}
+      # OpenClaw callback password (if using OpenClaw)
+      - OPENCLAW_GATEWAY_PASSWORD=${OPENCLAW_GATEWAY_PASSWORD:-}
+      # API keys for agents (only if needed — agents may use their own auth)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  agw-data:
+  agw-workspace:

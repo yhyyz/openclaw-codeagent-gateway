@@ -1,0 +1,10 @@
+target/
+.sisyphus/
+.spec-workflow/
+.git/
+data/
+*.db
+*.db-wal
+*.db-shm
+gateway.yaml
+node_modules/

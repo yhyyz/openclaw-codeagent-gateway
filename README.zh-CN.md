@@ -288,6 +288,121 @@ cp -r skill/ ~/.kiro/skills/openclaw-codeagent-gateway/
 - **进程池复用**：相同的 `(agent, session_id)` 复用同一子进程 — 上下文跨轮次保持。
 - **多租户**：每个 token 映射到一个租户，具有 5 维策略（agents、operations、resources、quotas、callbacks）。
 
+## 部署
+
+**openclaw-codeagent-gateway 是一个独立服务。** 它不需要和 OpenClaw 或任何客户端部署在同一台机器上。任何 HTTP 客户端都可以远程调用它——OpenClaw、自定义脚本、CI/CD 流水线或其他 AI Agent。
+
+多租户支持正是为此设计的：多个团队、多个 OpenClaw 实例或多个客户端可以共享同一个网关，各自使用独立的 Token 和隔离的权限。
+
+### 部署拓扑
+
+```
+Topology A: Co-located (dev/test)
+┌──────────────────────────────────┐
+│         Single Machine           │
+│  OpenClaw + agw + agents         │
+│  localhost:18789  localhost:8001  │
+└──────────────────────────────────┘
+
+Topology B: Separated (production recommended)
+┌────────────────┐         ┌──────────────────────┐
+│  Machine A      │  HTTP   │  Machine B            │
+│  OpenClaw       │────────→│  agw + agents         │
+│  :18789         │         │  :8001                │
+│                 │←────────│  (webhook callback)   │
+└────────────────┘         └──────────────────────┘
+
+Topology C: Multi-tenant (team scale)
+┌──────────────┐
+│ Team A       │──┐
+│ OpenClaw     │  │
+└──────────────┘  │       ┌──────────────────────┐
+                  ├──────→│  Shared agw           │
+┌──────────────┐  │       │  Machine B            │
+│ Team B       │──┤       │  :8001                │
+│ OpenClaw     │  │       │                       │
+└──────────────┘  │       │  Tenant A: token-aaa  │
+                  │       │  Tenant B: token-bbb  │
+┌──────────────┐  │       │  Tenant C: token-ccc  │
+│ Team C       │──┘       │                       │
+│ CI/CD script │          └──────────────────────┘
+└──────────────┘
+```
+
+### Docker 部署
+
+在远程机器上部署的最快方式：
+
+```bash
+# 克隆仓库
+git clone https://github.com/yhyyz/openclaw-codeagent-gateway.git
+cd openclaw-codeagent-gateway
+
+# 创建配置
+cp gateway.yaml.example gateway.yaml
+# 编辑 gateway.yaml — 设置 token、回调 URL、working_dir 为 /workspace
+
+# 构建并启动
+docker compose up -d
+
+# 验证
+curl http://localhost:8001/health
+```
+
+或下载预编译二进制，不使用 Docker 运行：
+
+```bash
+curl -LO https://github.com/yhyyz/openclaw-codeagent-gateway/releases/download/v0.1.0/agw-linux-x86_64.tar.gz
+tar xzf agw-linux-x86_64.tar.gz
+sudo mv agw-linux-x86_64 /usr/local/bin/agw
+agw serve --config gateway.yaml
+```
+
+### Docker Compose 与 OpenClaw 联合部署
+
+在同一台机器上运行完整堆栈：
+
+```yaml
+version: "3.8"
+services:
+  openclaw:
+    image: your-openclaw-image
+    ports:
+      - "18789:18789"
+    environment:
+      - OPENCLAW_GATEWAY_PASSWORD=your-password
+    depends_on:
+      agw:
+        condition: service_healthy
+
+  agw:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./gateway.yaml:/etc/agw/gateway.yaml:ro
+      - agw-data:/data
+      - agw-workspace:/workspace
+    environment:
+      - AGW_TOKEN=your-secret-token
+      - OPENCLAW_GATEWAY_PASSWORD=your-password
+
+volumes:
+  agw-data:
+  agw-workspace:
+```
+
+### 远程部署检查清单
+
+将 agw 部署在与 OpenClaw 不同的机器上时：
+
+1. **网络**：OpenClaw 必须能够访问 `agw-host:8001`（HTTP）
+2. **回调**：agw 必须能够访问 `openclaw-host:18789`（HTTP）以投递 webhook
+3. **防火墙**：双向开放端口 8001（agw）和 18789（OpenClaw）
+4. **配置**：在 `gateway.yaml` 中，将 `callback.default_url` 设置为 `http://openclaw-host:18789/tools/invoke`
+5. **TLS**：对于公网部署，将两者都放在支持 HTTPS 的反向代理后面
+6. **Agent**：CLI Agent（opencode、claude、kiro）必须安装在 agw 机器上，而非 OpenClaw 机器上
+
 ## 配置
 
 ### 最小化 gateway.yaml

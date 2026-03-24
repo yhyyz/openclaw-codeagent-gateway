@@ -288,6 +288,121 @@ New topic:
 - **Process pool with reuse**: Same `(agent, session_id)` reuses the same subprocess — context preserved across turns.
 - **Multi-tenant**: Each token maps to a tenant with 5-dimension policy (agents, operations, resources, quotas, callbacks).
 
+## Deployment
+
+**openclaw-codeagent-gateway is a standalone service.** It does NOT need to run on the same machine as OpenClaw or any other client. Any HTTP client can call it remotely — OpenClaw, custom scripts, CI/CD pipelines, or other AI agents.
+
+Multi-tenant support is specifically designed for this: multiple teams, multiple OpenClaw instances, or multiple clients can share one gateway, each with their own token and isolated permissions.
+
+### Deployment Topologies
+
+```
+Topology A: Co-located (dev/test)
+┌──────────────────────────────────┐
+│         Single Machine           │
+│  OpenClaw + agw + agents         │
+│  localhost:18789  localhost:8001  │
+└──────────────────────────────────┘
+
+Topology B: Separated (production recommended)
+┌────────────────┐         ┌──────────────────────┐
+│  Machine A      │  HTTP   │  Machine B            │
+│  OpenClaw       │────────→│  agw + agents         │
+│  :18789         │         │  :8001                │
+│                 │←────────│  (webhook callback)   │
+└────────────────┘         └──────────────────────┘
+
+Topology C: Multi-tenant (team scale)
+┌──────────────┐
+│ Team A       │──┐
+│ OpenClaw     │  │
+└──────────────┘  │       ┌──────────────────────┐
+                  ├──────→│  Shared agw           │
+┌──────────────┐  │       │  Machine B            │
+│ Team B       │──┤       │  :8001                │
+│ OpenClaw     │  │       │                       │
+└──────────────┘  │       │  Tenant A: token-aaa  │
+                  │       │  Tenant B: token-bbb  │
+┌──────────────┐  │       │  Tenant C: token-ccc  │
+│ Team C       │──┘       │                       │
+│ CI/CD script │          └──────────────────────┘
+└──────────────┘
+```
+
+### Docker Deployment
+
+The fastest way to deploy on a remote machine:
+
+```bash
+# Clone the repo
+git clone https://github.com/yhyyz/openclaw-codeagent-gateway.git
+cd openclaw-codeagent-gateway
+
+# Create your config
+cp gateway.yaml.example gateway.yaml
+# Edit gateway.yaml — set tokens, callback URL, working_dir to /workspace
+
+# Build and start
+docker compose up -d
+
+# Verify
+curl http://localhost:8001/health
+```
+
+Or pull the pre-built binary and run without Docker:
+
+```bash
+curl -LO https://github.com/yhyyz/openclaw-codeagent-gateway/releases/download/v0.1.0/agw-linux-x86_64.tar.gz
+tar xzf agw-linux-x86_64.tar.gz
+sudo mv agw-linux-x86_64 /usr/local/bin/agw
+agw serve --config gateway.yaml
+```
+
+### Docker Compose with OpenClaw
+
+For a full stack on one machine:
+
+```yaml
+version: "3.8"
+services:
+  openclaw:
+    image: your-openclaw-image
+    ports:
+      - "18789:18789"
+    environment:
+      - OPENCLAW_GATEWAY_PASSWORD=your-password
+    depends_on:
+      agw:
+        condition: service_healthy
+
+  agw:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./gateway.yaml:/etc/agw/gateway.yaml:ro
+      - agw-data:/data
+      - agw-workspace:/workspace
+    environment:
+      - AGW_TOKEN=your-secret-token
+      - OPENCLAW_GATEWAY_PASSWORD=your-password
+
+volumes:
+  agw-data:
+  agw-workspace:
+```
+
+### Remote deployment checklist
+
+When deploying agw on a separate machine from OpenClaw:
+
+1. **Network**: OpenClaw must be able to reach `agw-host:8001` (HTTP)
+2. **Callback**: agw must be able to reach `openclaw-host:18789` (HTTP) for webhook delivery
+3. **Firewall**: Open ports 8001 (agw) and 18789 (OpenClaw) bidirectionally
+4. **Config**: In `gateway.yaml`, set `callback.default_url` to `http://openclaw-host:18789/tools/invoke`
+5. **TLS**: For public networks, put both behind a reverse proxy with HTTPS
+6. **Agents**: CLI agents (opencode, claude, kiro) must be installed on the agw machine, not the OpenClaw machine
+
 ## Configuration
 
 ### Minimal gateway.yaml
