@@ -19,6 +19,7 @@ pub fn build_router(state: AppState) -> Router {
             "/sessions/{agent}/{session_id}",
             delete(handlers::close_session),
         )
+        .route("/sessions/{agent}", get(handlers::list_sessions))
         .route("/health/agents", get(health::health_agents))
         .route("/admin/tenants", get(admin::list_tenants))
         .route("/admin/pool", get(admin::pool_status))

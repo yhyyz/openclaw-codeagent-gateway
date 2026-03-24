@@ -23,6 +23,10 @@ pub struct JobSubmitRequest {
     pub callback: Option<CallbackInput>,
     #[serde(default = "default_true")]
     pub progress_notify: bool,
+    #[serde(default)]
+    pub session_name: Option<String>,
+    #[serde(default)]
+    pub new_session: bool,
 }
 
 fn default_true() -> bool {
@@ -108,12 +112,52 @@ pub async fn submit_job(
         )));
     }
 
-    // Create job
-    let session_id = req
-        .session_id
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let (session_id, session_name, is_new) = if req.new_session {
+        let sid = req
+            .session_id
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let name = req
+            .session_name
+            .unwrap_or_else(|| generate_fallback_name(&req.prompt));
+        (sid, name, true)
+    } else if let Some(name) = &req.session_name {
+        match state
+            .job_store
+            .get_session_by_name(&tenant.id, &req.agent, name)?
+        {
+            Some(rec) => (rec.session_id, rec.session_name, false),
+            None => {
+                let sid = req
+                    .session_id
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                (sid, name.clone(), true)
+            }
+        }
+    } else {
+        match state
+            .job_store
+            .get_latest_session(&tenant.id, &req.agent)?
+        {
+            Some(rec) => (rec.session_id, rec.session_name, false),
+            None => {
+                let sid = req
+                    .session_id
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                let name = generate_fallback_name(&req.prompt);
+                (sid, name, true)
+            }
+        }
+    };
+
+    if is_new {
+        state
+            .job_store
+            .insert_session(&session_id, &session_name, &tenant.id, &req.agent, "")?;
+    }
+
     let mut job = Job::new(&tenant.id, &req.agent, &session_id, &req.prompt);
     job.progress_notify = req.progress_notify;
+    job.session_name = session_name;
 
     if let Some(cb) = req.callback {
         job.callback_url = state.config.callback.default_url.clone();
@@ -140,7 +184,8 @@ pub async fn submit_job(
             "job_id": job.id,
             "status": "pending",
             "agent": req.agent,
-            "session_id": session_id
+            "session_id": session_id,
+            "session_name": job.session_name
         })),
     ))
 }
@@ -217,4 +262,28 @@ pub async fn close_session(
         "agent": agent,
         "session_id": session_id
     })))
+}
+
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
+    Path(agent): Path<String>,
+) -> Result<Json<Value>, Error> {
+    let sessions = state.job_store.list_sessions(&tenant.id, &agent, 20)?;
+    Ok(Json(json!({ "sessions": sessions })))
+}
+
+fn generate_fallback_name(prompt: &str) -> String {
+    let clean: String = prompt
+        .chars()
+        .take(40)
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-')
+        .collect();
+    let words: Vec<&str> = clean.split_whitespace().take(4).collect();
+    let name = words.join("-").to_lowercase();
+    if name.is_empty() {
+        "unnamed-session".to_string()
+    } else {
+        name
+    }
 }
