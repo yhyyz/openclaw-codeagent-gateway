@@ -7,34 +7,28 @@ description: "Interact with a running Agent Gateway (agw) — submit async jobs 
 
 Submit async jobs to AI coding agents (Claude, OpenCode, Kiro) via an HTTP gateway with automatic webhook delivery.
 
-## CRITICAL: Fire-and-forget pattern
+## CRITICAL: Fire-and-forget
 
-When submitting jobs (`POST /jobs`):
+After executing the curl command to submit a job:
+1. Do NOT output any text — no confirmation, no explanation, nothing
+2. The gateway automatically sends confirmation + progress + result to the chat
+3. Just end your response silently after the curl command
 
-1. Submit the job with callback configured
-2. **Do NOT generate any reply text** — the gateway automatically sends a confirmation message to the chat
-3. **End your turn immediately** after the curl command returns
-
-The gateway handles ALL notifications:
-- ✅ Submit confirmation (instant)
-- ⏳ Progress updates (during execution)
-- 📋 Final result with token usage (on completion)
-
-You do not need to tell the user anything — just submit and end your turn silently.
+If you output text after submitting, the user sees duplicate messages.
 
 **CORRECT:**
 ```
 POST /jobs → get job_id → END TURN (no reply text)
 ```
 
-**WRONG (blocks the session):**
-```
-POST /jobs → sleep → GET /jobs/{id} → sleep → GET /jobs/{id} → ...
-```
-
 **WRONG (redundant reply):**
 ```
 POST /jobs → reply "✅ Task submitted..." → ...
+```
+
+**WRONG (blocks the session):**
+```
+POST /jobs → sleep → GET /jobs/{id} → sleep → GET /jobs/{id} → ...
 ```
 
 Only use `GET /jobs/{id}` when the user explicitly asks "what's the status of job X?"
@@ -45,6 +39,42 @@ Only use `GET /jobs/{id}` when the user explicitly asks "what's the status of jo
 AGW_URL=http://127.0.0.1:8001
 AGW_TOKEN=agw-local-token-2024
 ```
+
+## Session Management
+
+Sessions maintain conversation context across multiple prompts to the same agent.
+
+### Auto-resume (default)
+When no `session_name` is specified, the gateway automatically resumes the most recent session for the same agent. The agent remembers previous conversation context.
+
+### Named sessions
+Add `session_name` to create or resume a named session:
+```json
+{"agent": "opencode", "prompt": "...", "session_name": "auth-refactor"}
+```
+
+When the user mentions a previous topic by name, use that as `session_name`.
+
+### New session
+Force a fresh session with no prior context:
+```json
+{"agent": "opencode", "prompt": "...", "new_session": true}
+```
+
+Use when the user says "new conversation", "start fresh", "forget everything", etc.
+
+### List sessions
+```bash
+curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/sessions/<agent>" | jq .
+```
+
+Returns recent sessions with names and prompt counts.
+
+### Generating session names
+When submitting a job, generate a short English session name (2-4 words, hyphenated) that describes the task:
+- "analyze code structure" → `session_name: "code-structure-analysis"`
+- "check disk usage" → `session_name: "disk-usage"`
+- "help me with auth" → `session_name: "auth-help"`
 
 ## Server Installation
 
@@ -119,8 +149,6 @@ curl -sf http://127.0.0.1:8001/health | jq .
 
 > **Note**: The Agent Gateway server currently supports **Linux only** (x86_64). Build from source for other architectures: `cargo build --release` from the [repository](https://github.com/yhyyz/openclaw-codeagent-gateway).
 
-> **Deployment note**: This skill assumes agw runs on the same machine as the calling agent. For production, the recommended setup is to deploy agw on a separate machine with more resources, and configure the `AGW_URL` to point to that machine's address.
-
 ## Quick start
 
 ### 1. Health check
@@ -144,6 +172,7 @@ curl -sf -X POST "$AGW_URL/jobs" \
   -d '{
     "agent": "claude",
     "prompt": "Analyze the auth module and suggest improvements",
+    "session_name": "auth-analysis",
     "progress_notify": true,
     "callback": {
       "channel": "telegram",
@@ -153,7 +182,7 @@ curl -sf -X POST "$AGW_URL/jobs" \
   }' | jq .
 ```
 
-Response: `202 Accepted` with `job_id`, `status: "pending"`, `session_id`.
+Response: `202 Accepted` with `job_id`, `status: "pending"`, `session_id`, `session_name`.
 
 ### Fields
 
@@ -162,7 +191,9 @@ Response: `202 Accepted` with `job_id`, `status: "pending"`, `session_id`.
 | `agent` | yes | — | Agent name: `claude`, `opencode`, `kiro` |
 | `prompt` | yes | — | Task description |
 | `callback` | yes* | — | Webhook routing (*without it, results are lost) |
-| `session_id` | no | auto-generated | Reuse for multi-turn conversations |
+| `session_name` | no | auto-generated | Human-readable session name for resume |
+| `new_session` | no | `false` | Force a fresh session |
+| `session_id` | no | auto-generated | Low-level session ID override |
 | `progress_notify` | no | `true` | `false` for silent mode (only final result delivered) |
 
 ### Callback format
@@ -210,13 +241,7 @@ Status values: `pending` → `running` → `completed` / `failed` / `interrupted
 curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/jobs" | jq .
 ```
 
-## Session management
-
-- **Multi-turn**: Provide the same `session_id` across jobs to maintain conversation context
-- **Isolation**: Different session IDs → isolated agent processes
-- **Auto-rebuild**: If an agent crashes, gateway rebuilds (context lost, user notified)
-
-### Close a session
+## Close a session
 
 ```bash
 curl -sf -X DELETE -H "Authorization: Bearer $AGW_TOKEN" \
