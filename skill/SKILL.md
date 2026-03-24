@@ -34,6 +34,81 @@ AGW_URL=http://127.0.0.1:8001
 AGW_TOKEN=agw-local-token-2024
 ```
 
+## Server Installation
+
+If the Agent Gateway server is not running, install it first.
+
+### One-command install (Linux x86_64)
+
+```bash
+curl -LO https://github.com/yhyyz/openclaw-codeagent-gateway/releases/download/v0.1.0/agw-linux-x86_64.tar.gz
+tar xzf agw-linux-x86_64.tar.gz
+chmod +x agw-linux-x86_64
+sudo mv agw-linux-x86_64 /usr/local/bin/agw
+rm agw-linux-x86_64.tar.gz
+```
+
+### Create config
+
+```bash
+curl -LO https://raw.githubusercontent.com/yhyyz/openclaw-codeagent-gateway/main/gateway.yaml.example
+cp gateway.yaml.example gateway.yaml
+```
+
+Edit `gateway.yaml`:
+1. Set a tenant token (any string you choose)
+2. Enable the agents you have installed (kiro, claude, opencode)
+3. If using with OpenClaw on the same machine, set callback:
+   ```yaml
+   callback:
+     default_url: "http://127.0.0.1:18789/tools/invoke"
+     default_token: "<your-openclaw-gateway-password>"
+   ```
+
+### Start the server
+
+```bash
+mkdir -p data/
+agw serve --config gateway.yaml
+```
+
+### Register as systemd service (recommended)
+
+```bash
+cat > /tmp/agw.service << 'EOF'
+[Unit]
+Description=Agent Gateway (agw)
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$HOME
+ExecStart=/usr/local/bin/agw serve --config $HOME/gateway.yaml
+Restart=on-failure
+RestartSec=5
+Environment="PATH=$HOME/.cargo/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=$HOME"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo cp /tmp/agw.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now agw
+```
+
+### Verify
+
+```bash
+curl -sf http://127.0.0.1:8001/health | jq .
+```
+
+> **Note**: The Agent Gateway server currently supports **Linux only** (x86_64). Build from source for other architectures: `cargo build --release` from the [repository](https://github.com/yhyyz/openclaw-codeagent-gateway).
+
+> **Deployment note**: This skill assumes agw runs on the same machine as the calling agent. For production, the recommended setup is to deploy agw on a separate machine with more resources, and configure the `AGW_URL` to point to that machine's address.
+
 ## Quick start
 
 ### 1. Health check

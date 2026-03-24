@@ -2,30 +2,64 @@
 
 A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP with permission-driven access control, async job execution, and channel-agnostic webhook callbacks.
 
+> **Platform**: Linux x86_64 only (pre-built binary). Build from source on other platforms with `cargo build --release`.
+
 ## Quick Start
+
+### Option A: Install via Skill (recommended for OpenClaw users)
+
+Install the agent-gateway skill to your AI coding agent. The skill includes server installation instructions that your agent can execute automatically.
+
+```bash
+# Install skill to OpenClaw
+npx skills add yhyyz/openclaw-codeagent-gateway -a openclaw -g
+
+# Then ask your OpenClaw bot: "Install and configure the agent gateway server"
+# The agent will read the skill and set up everything on the same machine.
+```
+
+### Option B: Direct install (for any environment)
+
+Give this README to Claude Code, OpenCode, or any AI coding agent:
+
+```bash
+# The agent will read this README and:
+# 1. Download the pre-built binary from GitHub releases
+# 2. Create gateway.yaml from the template
+# 3. Configure agents and tenants
+# 4. Set up systemd service
+# 5. Start the server
+```
+
+Or install manually:
+
+```bash
+# Download pre-built binary (Linux x86_64)
+curl -LO https://github.com/yhyyz/openclaw-codeagent-gateway/releases/download/v0.1.0/agw-linux-x86_64.tar.gz
+tar xzf agw-linux-x86_64.tar.gz
+chmod +x agw-linux-x86_64
+sudo mv agw-linux-x86_64 /usr/local/bin/agw
+
+# Or build from source
+git clone https://github.com/yhyyz/openclaw-codeagent-gateway.git
+cd openclaw-codeagent-gateway
+cargo build --release
+# Binary: target/release/agw
+```
 
 ### Prerequisites
 
-- Rust 1.80+ (or use pre-built binary)
 - At least one ACP-compatible CLI agent installed:
   - Kiro: `kiro-cli acp -a`
   - Claude Code: `npx -y @zed-industries/claude-agent-acp`
   - OpenCode: `opencode acp`
-
-### Build
-
-```bash
-source $HOME/.cargo/env
-cargo build --release
-# Binary: target/release/agw
-```
 
 ### Run
 
 ```bash
 cp gateway.yaml.example gateway.yaml
 # Edit gateway.yaml (set tokens, agent paths)
-./target/release/agw serve --config gateway.yaml
+agw serve --config gateway.yaml
 ```
 
 ### CLI Options
@@ -52,13 +86,13 @@ The agent-gateway skill lets any AI coding agent interact with a running gateway
 
 ```bash
 # Install to all detected agents
-npx skills add <repo-url>
+npx skills add yhyyz/openclaw-codeagent-gateway
 
 # Install to specific agents
-npx skills add <repo-url> -a openclaw -a claude-code -a opencode
+npx skills add yhyyz/openclaw-codeagent-gateway -a openclaw -a claude-code -a opencode
 
 # Install globally (available across all projects)
-npx skills add <repo-url> -g -a openclaw
+npx skills add yhyyz/openclaw-codeagent-gateway -g -a openclaw
 ```
 
 ### Manual installation
@@ -124,7 +158,7 @@ agents:
     mode: acp
     command: "npx"
     acp_args: ["-y", "@zed-industries/claude-agent-acp"]
-    working_dir: "/home/user/work"
+    working_dir: "/path/to/your/workspace"
     env: {}
 
   opencode:
@@ -132,7 +166,7 @@ agents:
     mode: acp
     command: "opencode"
     acp_args: ["acp"]
-    working_dir: "/home/user/work"
+    working_dir: "/path/to/your/workspace"
     env: {}
 
   kiro:
@@ -140,7 +174,7 @@ agents:
     mode: acp
     command: "kiro-cli"
     acp_args: ["acp", "-a"]
-    working_dir: "/home/user/work"
+    working_dir: "/path/to/your/workspace"
     env: {}
 
 pool:
@@ -534,6 +568,8 @@ Analysis results here...
 
 ## OpenClaw Integration
 
+> **Note**: This example shows agw and OpenClaw on the same machine (127.0.0.1). For production, deploy agw on a separate machine with dedicated CPU/memory for agent processes, and replace 127.0.0.1 with the agw machine's IP address.
+
 This setup has been tested end-to-end: Telegram → OpenClaw → agw → agent → webhook → OpenClaw → Telegram.
 
 ### Step 1: gateway.yaml for OpenClaw
@@ -556,7 +592,7 @@ agents:
     mode: acp
     command: "kiro-cli"
     acp_args: ["acp", "-a"]
-    working_dir: "/home/ec2-user/work"
+    working_dir: "/path/to/your/workspace"
     description: "AWS Kiro coding agent"
     env: {}
 
@@ -565,7 +601,7 @@ agents:
     mode: acp
     command: "npx"
     acp_args: ["-y", "@zed-industries/claude-agent-acp"]
-    working_dir: "/home/ec2-user/work"
+    working_dir: "/path/to/your/workspace"
     description: "Claude Code agent (via ACP adapter)"
     env: {}
 
@@ -574,7 +610,7 @@ agents:
     mode: acp
     command: "opencode"
     acp_args: ["acp"]
-    working_dir: "/home/ec2-user/work"
+    working_dir: "/path/to/your/workspace"
     description: "OpenCode multi-model agent"
     env: {}
 
@@ -586,12 +622,12 @@ pool:
   stuck_timeout_secs: 900
 
 store:
-  path: "/home/ec2-user/work/aws/acp-gateway/data/gateway.db"
+  path: "data/gateway.db"
   job_retention_secs: 86400
 
 callback:
   default_url: "http://127.0.0.1:18789/tools/invoke"
-  default_token: "ssa123456"
+  default_token: "${OPENCLAW_GATEWAY_PASSWORD}"
   retry_max: 3
   retry_base_delay_secs: 5
 
@@ -610,7 +646,7 @@ gateway:
 tenants:
   openclaw:
     credentials:
-      - token: "agw-local-token-2024"
+      - token: "${AGW_TOKEN}"
     policy:
       agents:
         allow: ["*"]
@@ -622,7 +658,7 @@ tenants:
         session_manage: true
         admin: true
       resources:
-        workspace: "/home/ec2-user/work"
+        workspace: "/path/to/your/workspace"
         env_inject: {}
         env_deny: []
       quotas:
@@ -642,7 +678,7 @@ tenants:
 
 ```bash
 # Option A: npx skills
-npx skills add <repo-url> -a openclaw -g
+npx skills add yhyyz/openclaw-codeagent-gateway -a openclaw -g
 
 # Option B: Manual
 cp -r skill/ ~/clawd/skills/agent-gateway/
@@ -658,7 +694,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now agw
 
 # Or run directly
-./target/release/agw serve --config gateway.yaml
+agw serve --config gateway.yaml
 ```
 
 ### Step 4: Restart OpenClaw gateway
@@ -683,7 +719,7 @@ The bot will:
 
 ### systemd service file
 
-The verified working systemd unit file:
+Example systemd unit file (adjust paths for your environment):
 
 ```ini
 [Unit]
@@ -692,14 +728,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=ec2-user
-Group=ec2-user
-WorkingDirectory=/home/ec2-user/work/aws/acp-gateway
-ExecStart=/home/ec2-user/work/aws/acp-gateway/target/release/agw serve --config /home/ec2-user/work/aws/acp-gateway/gateway.yaml
+User=<your-user>
+WorkingDirectory=<project-dir>
+ExecStart=/usr/local/bin/agw serve --config <project-dir>/gateway.yaml
 Restart=on-failure
 RestartSec=5
-Environment="PATH=/home/ec2-user/.cargo/bin:/home/ec2-user/.local/bin:/home/ec2-user/.opencode/bin:/home/ec2-user/.npm-global/bin:/home/ec2-user/.bun/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="HOME=/home/ec2-user"
+Environment="PATH=$HOME/.cargo/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/<your-user>"
 
 [Install]
 WantedBy=multi-user.target
