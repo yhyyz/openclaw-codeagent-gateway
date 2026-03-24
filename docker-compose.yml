@@ -2,23 +2,31 @@ version: "3.8"
 
 services:
   agw:
-    build: .
+    build:
+      context: .
+      args:
+        AGW_VERSION: v0.1.0
     image: openclaw-codeagent-gateway:latest
     container_name: agw
     ports:
       - "8001:8001"
     volumes:
       - ./gateway.yaml:/etc/agw/gateway.yaml:ro
+      - ./opencode-config.json:/root/.config/opencode/opencode.json:ro
       - agw-data:/data
       - agw-workspace:/workspace
     environment:
-      # Tenant token (you define this — any string)
-      - AGW_TOKEN=${AGW_TOKEN:-your-secret-token}
-      # OpenClaw callback password (if using OpenClaw)
-      - OPENCLAW_GATEWAY_PASSWORD=${OPENCLAW_GATEWAY_PASSWORD:-}
-      # API keys for agents (only if needed — agents may use their own auth)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # AWS Region (required for Bedrock)
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+
+      # --- Option A: Bedrock via EC2 Instance Role (recommended on EC2) ---
+      # No API keys needed — container uses EC2 Role via IMDS automatically
+      - CLAUDE_CODE_USE_BEDROCK=1
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-us.anthropic.claude-opus-4-6-v1}
+
+      # --- Option B: API Key mode (uncomment if not using Bedrock) ---
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]

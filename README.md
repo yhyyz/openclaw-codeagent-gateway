@@ -369,6 +369,116 @@ sudo mv agw-linux-x86_64 /usr/local/bin/agw
 agw serve --config gateway.yaml
 ```
 
+### Docker with AWS Bedrock (verified)
+
+This configuration has been tested end-to-end on EC2 with Bedrock-enabled IAM Role.
+
+**Prerequisites:**
+- EC2 instance with IAM Role that has `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions
+- Docker installed on the EC2 instance
+
+**Step 1: Create gateway.yaml**
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8001
+
+agents:
+  claude:
+    enabled: true
+    mode: acp
+    command: "npx"
+    acp_args: ["-y", "@zed-industries/claude-agent-acp"]
+    working_dir: "/workspace"
+    description: "Claude Code via Bedrock"
+    env:
+      CLAUDE_CODE_USE_BEDROCK: "1"
+      AWS_REGION: "us-east-1"
+      ANTHROPIC_MODEL: "us.anthropic.claude-opus-4-6-v1"
+
+  opencode:
+    enabled: true
+    mode: acp
+    command: "opencode"
+    acp_args: ["acp"]
+    working_dir: "/workspace"
+    description: "OpenCode via Bedrock"
+    env:
+      AWS_REGION: "us-east-1"
+
+pool:
+  max_processes: 10
+  max_per_agent: 5
+  idle_timeout_secs: 43200
+  watchdog_interval_secs: 300
+  stuck_timeout_secs: 172800
+
+store:
+  path: "/data/gateway.db"
+  job_retention_secs: 86400
+
+tenants:
+  default:
+    credentials:
+      - token: "${AGW_TOKEN}"
+    policy:
+      agents:
+        allow: ["*"]
+      operations:
+        async_jobs: true
+        session_manage: true
+        admin: true
+      quotas:
+        max_concurrent_sessions: 10
+        max_concurrent_jobs: 5
+        max_prompt_length: 65536
+        session_ttl_hours: 48
+      callbacks:
+        allowed_urls: ["*"]
+        allowed_channels:
+          - channel: "*"
+            targets: ["*"]
+```
+
+**Step 2: Create opencode-config.json** (for OpenCode Bedrock)
+
+```json
+{
+  "provider": {
+    "amazon-bedrock": {
+      "options": { "region": "us-east-1" },
+      "models": {
+        "anthropic.claude-opus-4-6-v1": {
+          "limit": { "context": 1000000, "output": 128000 }
+        }
+      }
+    }
+  },
+  "$schema": "https://opencode.ai/config.json"
+}
+```
+
+**Step 3: Start**
+
+```bash
+export AGW_TOKEN="your-secret-token"
+docker compose up -d
+curl http://localhost:8001/health
+```
+
+No API keys needed — the container uses EC2 Instance Role via IMDS to authenticate with Bedrock.
+
+**Using API Keys instead of Bedrock:**
+
+If you're not on EC2 or prefer API keys, set environment variables in docker-compose.yml:
+```yaml
+environment:
+  - ANTHROPIC_API_KEY=sk-ant-xxx   # For Claude Code
+  - OPENAI_API_KEY=sk-xxx          # For OpenCode with OpenAI
+```
+And remove the Bedrock-specific env vars from the agent configs in gateway.yaml.
+
 ### Docker Compose with OpenClaw
 
 For a full stack on one machine:

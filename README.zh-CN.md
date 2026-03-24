@@ -369,6 +369,116 @@ sudo mv agw-linux-x86_64 /usr/local/bin/agw
 agw serve --config gateway.yaml
 ```
 
+### Docker 部署 AWS Bedrock（已验证）
+
+此配置已在配置了 Bedrock 权限 IAM Role 的 EC2 实例上完成端到端测试。
+
+**前置条件：**
+- EC2 实例需要附加具有 `bedrock:InvokeModel` 和 `bedrock:InvokeModelWithResponseStream` 权限的 IAM Role
+- EC2 实例上已安装 Docker
+
+**第 1 步：创建 gateway.yaml**
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8001
+
+agents:
+  claude:
+    enabled: true
+    mode: acp
+    command: "npx"
+    acp_args: ["-y", "@zed-industries/claude-agent-acp"]
+    working_dir: "/workspace"
+    description: "Claude Code via Bedrock"
+    env:
+      CLAUDE_CODE_USE_BEDROCK: "1"
+      AWS_REGION: "us-east-1"
+      ANTHROPIC_MODEL: "us.anthropic.claude-opus-4-6-v1"
+
+  opencode:
+    enabled: true
+    mode: acp
+    command: "opencode"
+    acp_args: ["acp"]
+    working_dir: "/workspace"
+    description: "OpenCode via Bedrock"
+    env:
+      AWS_REGION: "us-east-1"
+
+pool:
+  max_processes: 10
+  max_per_agent: 5
+  idle_timeout_secs: 43200
+  watchdog_interval_secs: 300
+  stuck_timeout_secs: 172800
+
+store:
+  path: "/data/gateway.db"
+  job_retention_secs: 86400
+
+tenants:
+  default:
+    credentials:
+      - token: "${AGW_TOKEN}"
+    policy:
+      agents:
+        allow: ["*"]
+      operations:
+        async_jobs: true
+        session_manage: true
+        admin: true
+      quotas:
+        max_concurrent_sessions: 10
+        max_concurrent_jobs: 5
+        max_prompt_length: 65536
+        session_ttl_hours: 48
+      callbacks:
+        allowed_urls: ["*"]
+        allowed_channels:
+          - channel: "*"
+            targets: ["*"]
+```
+
+**第 2 步：创建 opencode-config.json**（用于 OpenCode Bedrock）
+
+```json
+{
+  "provider": {
+    "amazon-bedrock": {
+      "options": { "region": "us-east-1" },
+      "models": {
+        "anthropic.claude-opus-4-6-v1": {
+          "limit": { "context": 1000000, "output": 128000 }
+        }
+      }
+    }
+  },
+  "$schema": "https://opencode.ai/config.json"
+}
+```
+
+**第 3 步：启动**
+
+```bash
+export AGW_TOKEN="your-secret-token"
+docker compose up -d
+curl http://localhost:8001/health
+```
+
+无需 API 密钥 — 容器通过 IMDS 使用 EC2 Instance Role 自动认证 Bedrock。
+
+**使用 API 密钥替代 Bedrock：**
+
+如果不在 EC2 上运行或更倾向于使用 API 密钥，在 docker-compose.yml 中设置环境变量：
+```yaml
+environment:
+  - ANTHROPIC_API_KEY=sk-ant-xxx   # 用于 Claude Code
+  - OPENAI_API_KEY=sk-xxx          # 用于 OpenCode + OpenAI
+```
+并从 gateway.yaml 的 agent 配置中移除 Bedrock 相关的环境变量。
+
 ### Docker Compose 与 OpenClaw 联合部署
 
 在同一台机器上运行完整堆栈：

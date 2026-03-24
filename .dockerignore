@@ -1,7 +1,6 @@
-target/
+.git/
 .sisyphus/
 .spec-workflow/
-.git/
 data/
 *.db
 *.db-wal
