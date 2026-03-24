@@ -2,6 +2,12 @@
 
 A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP with permission-driven access control, async job execution, and channel-agnostic webhook callbacks.
 
+## Demo
+
+<img src="images/telegram-demo.jpg" alt="Telegram integration demo — async job submission, progress tracking, and result delivery" width="400" />
+
+> Telegram integration: async job submission with real-time tool progress, session management, and token usage reporting.
+
 > **Platform**: Linux x86_64 only (pre-built binary). Build from source on other platforms with `cargo build --release`.
 
 ## Quick Start
