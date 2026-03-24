@@ -9,20 +9,32 @@ Submit async jobs to AI coding agents (Claude, OpenCode, Kiro) via an HTTP gatew
 
 ## CRITICAL: Fire-and-forget pattern
 
-1. Submit job via `POST /jobs` with callback
-2. Tell the user the `job_id` — results will arrive automatically
-3. **END YOUR TURN IMMEDIATELY** — do NOT poll, do NOT wait
+When submitting jobs (`POST /jobs`):
 
-The gateway pushes results to this chat via webhook when the job completes.
+1. Submit the job with callback configured
+2. **Do NOT generate any reply text** — the gateway automatically sends a confirmation message to the chat
+3. **End your turn immediately** after the curl command returns
+
+The gateway handles ALL notifications:
+- ✅ Submit confirmation (instant)
+- ⏳ Progress updates (during execution)
+- 📋 Final result with token usage (on completion)
+
+You do not need to tell the user anything — just submit and end your turn silently.
 
 **CORRECT:**
 ```
-POST /jobs → get job_id → reply "✅ Submitted (job: abc123). Results arrive automatically." → DONE
+POST /jobs → get job_id → END TURN (no reply text)
 ```
 
 **WRONG (blocks the session):**
 ```
 POST /jobs → sleep → GET /jobs/{id} → sleep → GET /jobs/{id} → ...
+```
+
+**WRONG (redundant reply):**
+```
+POST /jobs → reply "✅ Task submitted..." → ...
 ```
 
 Only use `GET /jobs/{id}` when the user explicitly asks "what's the status of job X?"

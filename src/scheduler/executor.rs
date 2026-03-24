@@ -62,6 +62,12 @@ pub async fn execute_job(job_id: String, state: AppState) {
         None
     };
 
+    // Send submit confirmation immediately
+    if let Some(target) = &callback_target {
+        let confirm_msg = format!("✅ [{}] {} 任务已提交，结果将自动推送", job.agent, &job_id[..job_id.len().min(8)]);
+        send_progress_webhook(target, &confirm_msg).await;
+    }
+
     let result: Result<AcpResult, String> = if agent_cfg.mode == "pty" {
         match crate::runtime::pty::run_pty(
             &agent_cfg.command,
@@ -223,8 +229,6 @@ async fn run_acp_prompt(
     let mut tool_counts: HashMap<String, usize> = HashMap::new();
     let mut tools_notified: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut tools_completed_count: usize = 0;
-    let first_event_time = std::time::Instant::now();
-    let mut first_progress_sent = false;
     let mut usage_used: u64 = 0;
     let mut usage_cost: f64 = 0.0;
 
@@ -312,13 +316,6 @@ async fn run_acp_prompt(
                                     if job.progress_notify && !tools_notified.contains(&title) {
                                         tools_notified.insert(title.clone());
                                         if let Some(target) = callback_target {
-                                            if !first_progress_sent {
-                                                let elapsed = first_event_time.elapsed();
-                                                if elapsed < std::time::Duration::from_secs(5) {
-                                                    tokio::time::sleep(std::time::Duration::from_secs(5) - elapsed).await;
-                                                }
-                                                first_progress_sent = true;
-                                            }
                                             let msg = format!("\u{23f3} [{}] {} \u{1f527} {}", job.agent, &job_id[..8.min(job_id.len())], title);
                                             let progress_target = target.clone();
                                             tokio::spawn(async move {
@@ -350,13 +347,6 @@ async fn run_acp_prompt(
 
                                     if job.progress_notify {
                                         if let Some(target) = callback_target {
-                                            if !first_progress_sent {
-                                                let elapsed = first_event_time.elapsed();
-                                                if elapsed < std::time::Duration::from_secs(5) {
-                                                    tokio::time::sleep(std::time::Duration::from_secs(5) - elapsed).await;
-                                                }
-                                                first_progress_sent = true;
-                                            }
                                             let plan_preview = &text[..text.len().min(200)];
                                             let msg = format!("\u{23f3} [{}] {} \u{1f4cb} {}", job.agent, &job_id[..8.min(job_id.len())], plan_preview);
                                             let progress_target = target.clone();
