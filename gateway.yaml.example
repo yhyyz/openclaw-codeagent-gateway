@@ -51,11 +51,11 @@ agents:
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
 
 pool:
-  max_processes: 8
-  max_per_agent: 4
-  idle_timeout_secs: 600
-  watchdog_interval_secs: 10
-  stuck_timeout_secs: 900
+  max_processes: 20
+  max_per_agent: 10
+  idle_timeout_secs: 43200        # 12 hours — ACP process stays alive for this long after last prompt
+  watchdog_interval_secs: 300     # 5 minutes — how often to check for dead/idle processes
+  stuck_timeout_secs: 172800      # 48 hours — coding tasks can run very long
 
 store:
   path: "data/gateway.db"

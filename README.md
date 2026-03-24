@@ -1,4 +1,4 @@
-# Agent Gateway (agw)
+# openclaw-codeagent-gateway
 
 A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP with permission-driven access control, async job execution, and channel-agnostic webhook callbacks.
 
@@ -115,23 +115,97 @@ After installing, restart your agent or start a new session for the skill to be 
 
 ## Architecture
 
+### Complete Request Flow
+
 ```
-HTTP Client (OpenClaw / curl / AI agent)
+User (Telegram / Feishu / Discord / Slack)
     │
+    │ 1. User sends message
     ▼
-┌──────────────────────┐
-│   Agent Gateway       │
-│   (agw :8001)         │
-│                       │
-│   Auth → Policy →     │
-│   Process Pool →      │
-│   Job Scheduler →     │
-│   Webhook Dispatch    │
-└──────────┬───────────┘
-           │ ACP protocol (JSON-RPC over stdio)
-    ┌──────┼──────┐
-    ▼      ▼      ▼
-  Kiro  Claude  OpenCode
+┌──────────────────┐
+│    OpenClaw       │  Message gateway (multi-channel)
+│    Gateway        │
+│    :18789         │
+└────────┬─────────┘
+         │ 2. AI reads agent-gateway skill
+         │ 3. AI calls POST /jobs with callback
+         ▼
+┌──────────────────────────────────────────────────┐
+│              openclaw-codeagent-gateway            │
+│              (agw :8001)                          │
+│                                                    │
+│  ┌─────────┐  ┌──────────┐  ┌─────────────────┐  │
+│  │  Auth    │→│  Policy   │→│  Job Scheduler   │  │
+│  │  Layer   │  │  Engine   │  │                 │  │
+│  │          │  │ 5-dim    │  │ SQLite + patrol  │  │
+│  │ Token→   │  │ check    │  │ stuck detection  │  │
+│  │ Tenant   │  │          │  │ webhook retry    │  │
+│  └─────────┘  └──────────┘  └────────┬────────┘  │
+│                                       │            │
+│                              ┌────────▼────────┐  │
+│                              │  Process Pool    │  │
+│                              │                  │  │
+│                              │ (agent,session)  │  │
+│                              │  → reuse process │  │
+│                              │  session/load    │  │
+│                              └────────┬────────┘  │
+│                                       │            │
+└───────────────────────────────────────┼────────────┘
+         │                              │ 4. ACP protocol
+         │                              │    (JSON-RPC over stdio)
+         │                    ┌─────────┼─────────┐
+         │                    ▼         ▼         ▼
+         │                 kiro-cli  claude-acp  opencode
+         │                  (ACP)     (ACP)      (ACP)
+         │                    │         │         │
+         │                    └────┬────┘─────────┘
+         │                         │
+         │                         │ 5. Agent executes task
+         │                         │    (calls LLM, reads files,
+         │                         │     runs tools, writes code)
+         │                         │
+         │                    ┌────▼────────────────┐
+         │                    │  Progress events     │
+         │                    │  tool_call → webhook │
+         │                    │  plan → webhook      │
+         │                    └────┬────────────────┘
+         │                         │
+         │  6. Progress webhooks   │ 7. Final result webhook
+         │◄────────────────────────┤◄──────────────────
+         │  POST /tools/invoke     │  POST /tools/invoke
+         │  ● [agent] ⚙️ tool      │  [agent] result + tokens
+         ▼                         ▼
+┌──────────────────┐
+│    OpenClaw       │  Routes to originating channel
+│    Gateway        │
+└────────┬─────────┘
+         │ 8. Push to user's chat
+         ▼
+User receives progress + final result
+```
+
+### Session Lifecycle
+
+```
+First prompt (new topic):
+  POST /jobs {new_session:true, session_name:"auth-refactor"}
+  → session/new → ACP session created
+  → session stored in SQLite with acp_session_id
+
+Next prompt (same topic):
+  POST /jobs {session_name:"auth-refactor-a1b2"}
+  → lookup session in SQLite → found
+  → process alive? → session/prompt directly (instant)
+  → process dead?  → spawn new → session/load (restore context) → prompt
+
+After idle timeout (12h default):
+  → process killed by watchdog
+  → session record remains in SQLite
+  → next prompt: spawn → session/load → context restored from agent storage
+
+New topic:
+  POST /jobs {new_session:true, session_name:"disk-check"}
+  → creates fresh session, no old context
 ```
 
 ### Key Design Decisions
@@ -180,9 +254,9 @@ agents:
 pool:
   max_processes: 20
   max_per_agent: 10
-  idle_timeout_secs: 120
-  watchdog_interval_secs: 30
-  stuck_timeout_secs: 900
+  idle_timeout_secs: 43200
+  watchdog_interval_secs: 300
+  stuck_timeout_secs: 172800
 
 store:
   path: "data/gateway.db"
@@ -291,11 +365,11 @@ tenants:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `max_processes` | integer | `8` | Global maximum active processes |
-| `max_per_agent` | integer | `4` | Maximum processes per agent type |
-| `idle_timeout_secs` | integer | `600` | Reclaim idle processes after this many seconds |
-| `watchdog_interval_secs` | integer | `10` | Health check loop interval (seconds) |
-| `stuck_timeout_secs` | integer | `900` | Force-fail jobs running longer than this (seconds) |
+| `max_processes` | integer | `20` | Global maximum active processes |
+| `max_per_agent` | integer | `10` | Maximum processes per agent type |
+| `idle_timeout_secs` | integer | `43200` (12h) | How long an agent process stays alive after the last prompt. Set high (12h) because session/load can restore context after process restart. |
+| `watchdog_interval_secs` | integer | `300` (5min) | How often the patrol loop checks for stuck/idle processes. |
+| `stuck_timeout_secs` | integer | `172800` (48h) | Max time a single job can run before being marked as failed. Set high (48h) because complex coding tasks can take hours. |
 
 #### `store` — Persistent storage
 
@@ -617,9 +691,9 @@ agents:
 pool:
   max_processes: 20
   max_per_agent: 10
-  idle_timeout_secs: 120
-  watchdog_interval_secs: 30
-  stuck_timeout_secs: 900
+  idle_timeout_secs: 43200
+  watchdog_interval_secs: 300
+  stuck_timeout_secs: 172800
 
 store:
   path: "data/gateway.db"
@@ -780,7 +854,7 @@ agw sends this payload to OpenClaw's `/tools/invoke`:
 | `503 pool exhausted` | No capacity for agent | Wait or increase `pool.max_per_agent` |
 | `504 timeout` | Request took too long | Increase `server.request_timeout_secs` |
 | Health check fails | Gateway not running | Check `systemctl status agw` or verify port 8001 is in use |
-| Job stuck in `running` | Agent hung | Auto-fails after `stuck_timeout_secs` (default 900s) |
+| Job stuck in `running` | Agent hung | Auto-fails after `stuck_timeout_secs` (default 48h) |
 | No callback received | Missing callback field | Always include `callback` in the job request |
 | No callback received | OpenClaw not listening | Verify OpenClaw is running on port 18789 |
 | Kiro takes ~19s to start | MCP server initialization | Normal — first job on a new Kiro session is slow |

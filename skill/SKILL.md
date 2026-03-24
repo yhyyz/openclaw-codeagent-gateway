@@ -103,6 +103,17 @@ curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/sessions/<agent>" | jq 
 
 Returns recent sessions with names and prompt counts.
 
+### Session lifecycle after timeout
+
+When an agent process is idle for longer than `idle_timeout_secs` (default 12h):
+1. The watchdog kills the process to free resources
+2. The session record remains in SQLite (not deleted)
+3. On the next prompt to that session, the gateway spawns a new process
+4. The gateway calls `session/load` on the new process, restoring context from the agent's storage
+5. The prompt executes as if the process had never died
+
+This means sessions survive process restarts — the agent reloads its conversation history automatically.
+
 ### Naming sessions
 
 When submitting a job, generate a `session_name` that describes the TASK CONTENT — what the user wants to accomplish. Use 2-4 English words, hyphenated, lowercase. The gateway will automatically append a short unique suffix.
