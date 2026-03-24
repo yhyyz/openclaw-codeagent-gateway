@@ -8,7 +8,7 @@ A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code,
 
 ### Option A: Install via Skill (recommended for OpenClaw users)
 
-Install the agent-gateway skill to your AI coding agent. The skill includes server installation instructions that your agent can execute automatically.
+Install the openclaw-codeagent-gateway skill to your AI coding agent. The skill includes server installation instructions that your agent can execute automatically.
 
 ```bash
 # Install skill to OpenClaw
@@ -114,7 +114,7 @@ curl http://localhost:8001/health
 
 ## Install the Skill
 
-The agent-gateway skill lets any AI coding agent interact with a running gateway.
+The openclaw-codeagent-gateway skill lets any AI coding agent interact with a running gateway.
 
 ### Via npx skills (recommended)
 
@@ -133,16 +133,16 @@ npx skills add yhyyz/openclaw-codeagent-gateway -g -a openclaw
 
 ```bash
 # For OpenClaw
-cp -r skill/ ~/clawd/skills/agent-gateway/
+cp -r skill/ ~/clawd/skills/openclaw-codeagent-gateway/
 
 # For Claude Code
-cp -r skill/ ~/.claude/skills/agent-gateway/
+cp -r skill/ ~/.claude/skills/openclaw-codeagent-gateway/
 
 # For OpenCode
-cp -r skill/ ~/.config/opencode/skills/agent-gateway/
+cp -r skill/ ~/.config/opencode/skills/openclaw-codeagent-gateway/
 
 # For Kiro CLI
-cp -r skill/ ~/.kiro/skills/agent-gateway/
+cp -r skill/ ~/.kiro/skills/openclaw-codeagent-gateway/
 ```
 
 After installing, restart your agent or start a new session for the skill to be discovered.
@@ -161,7 +161,7 @@ User (Telegram / Feishu / Discord / Slack)
 │    Gateway        │
 │    :18789         │
 └────────┬─────────┘
-         │ 2. AI reads agent-gateway skill
+         │ 2. AI reads openclaw-codeagent-gateway skill
          │ 3. AI calls POST /jobs with callback
          ▼
 ┌──────────────────────────────────────────────────┐
@@ -789,8 +789,8 @@ tenants:
 npx skills add yhyyz/openclaw-codeagent-gateway -a openclaw -g
 
 # Option B: Manual
-cp -r skill/ ~/clawd/skills/agent-gateway/
-chmod +x ~/clawd/skills/agent-gateway/scripts/agw-client.sh
+cp -r skill/ ~/clawd/skills/openclaw-codeagent-gateway/
+chmod +x ~/clawd/skills/openclaw-codeagent-gateway/scripts/agw-client.sh
 ```
 
 ### Step 3: Start agw service

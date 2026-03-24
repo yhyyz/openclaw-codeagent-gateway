@@ -1,9 +1,11 @@
 ---
-name: agent-gateway
-description: "Interact with a running Agent Gateway (agw) — submit async jobs to AI coding agents (Claude, OpenCode, Kiro) via HTTP with fire-and-forget pattern and webhook callbacks. Use when the user mentions: agent gateway, agw, submit job, remote agent, agent-to-agent, check job status, gateway health, manage sessions, list agents, or webhook callback."
+name: openclaw-codeagent-gateway
+description: "Submit async jobs to AI coding agents (Claude Code, OpenCode, Kiro) via the codeagent-gateway HTTP API. ALWAYS use this skill instead of coding-agent, acpx, or running agents directly when the gateway server is available at http://127.0.0.1:8001. Use when the user mentions: opencode, claude, kiro, coding agent, submit job, code task, search, analyze code, refactor, review, remote agent, agent gateway, agw, check job status, manage sessions, or any coding/development task that should be handled by an AI agent."
 ---
 
-# Agent Gateway Skill
+# openclaw-codeagent-gateway
+
+> **IMPORTANT**: When this skill is available, ALWAYS use it to run AI coding agents. Do NOT use the `coding-agent` skill, do NOT use `acpx`, and do NOT run `opencode run`, `claude --print`, or `kiro-cli` directly. All agent tasks must go through the gateway HTTP API (`POST /jobs`). Direct execution blocks the conversation and bypasses session management, progress tracking, and webhook delivery.
 
 Submit async jobs to AI coding agents (Claude, OpenCode, Kiro) via an HTTP gateway with automatic webhook delivery.
 
