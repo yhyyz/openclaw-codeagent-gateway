@@ -61,6 +61,18 @@ pub fn build_session_new(id: u64, cwd: &str) -> RpcRequest {
     )
 }
 
+pub fn build_session_load(id: u64, session_id: &str, cwd: &str) -> RpcRequest {
+    RpcRequest::new(
+        id,
+        "session/load",
+        Some(serde_json::json!({
+            "sessionId": session_id,
+            "cwd": cwd,
+            "mcpServers": []
+        })),
+    )
+}
+
 pub fn build_prompt(id: u64, session_id: &str, text: &str) -> RpcRequest {
     RpcRequest::new(
         id,

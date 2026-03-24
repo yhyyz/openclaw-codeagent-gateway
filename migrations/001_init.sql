@@ -21,3 +21,16 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_tenant ON jobs(tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_webhook ON jobs(status, webhook_sent)
     WHERE status IN ('completed', 'failed', 'interrupted') AND webhook_sent = 0;
+
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id     TEXT PRIMARY KEY,
+    session_name   TEXT NOT NULL,
+    tenant_id      TEXT NOT NULL,
+    agent          TEXT NOT NULL,
+    acp_session_id TEXT NOT NULL DEFAULT '',
+    created_at     INTEGER NOT NULL,
+    last_used_at   INTEGER NOT NULL,
+    prompt_count   INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_session_name ON sessions(tenant_id, agent, session_name);
+CREATE INDEX IF NOT EXISTS idx_session_recent ON sessions(tenant_id, agent, last_used_at DESC);

@@ -3,9 +3,22 @@
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
+use serde::Serialize;
 
 use crate::error::Error;
 use crate::scheduler::job::{Job, JobStatus};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionRecord {
+    pub session_id: String,
+    pub session_name: String,
+    pub tenant_id: String,
+    pub agent: String,
+    pub acp_session_id: String,
+    pub created_at: i64,
+    pub last_used_at: i64,
+    pub prompt_count: i64,
+}
 
 pub struct JobStore {
     conn: Mutex<Connection>,
@@ -21,6 +34,22 @@ impl JobStore {
         conn.execute_batch(include_str!("../../migrations/001_init.sql"))?;
         let _ = conn.execute_batch("ALTER TABLE jobs ADD COLUMN progress TEXT NOT NULL DEFAULT ''");
         let _ = conn.execute_batch("ALTER TABLE jobs ADD COLUMN progress_notify INTEGER NOT NULL DEFAULT 1");
+        let _ = conn.execute_batch("ALTER TABLE jobs ADD COLUMN session_name TEXT NOT NULL DEFAULT ''");
+        // Ensure sessions table exists for existing DBs (new DBs get it from 001_init.sql)
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                session_id     TEXT PRIMARY KEY,
+                session_name   TEXT NOT NULL,
+                tenant_id      TEXT NOT NULL,
+                agent          TEXT NOT NULL,
+                acp_session_id TEXT NOT NULL DEFAULT '',
+                created_at     INTEGER NOT NULL,
+                last_used_at   INTEGER NOT NULL,
+                prompt_count   INTEGER NOT NULL DEFAULT 0
+            )"
+        );
+        let _ = conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_session_name ON sessions(tenant_id, agent, session_name)");
+        let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_session_recent ON sessions(tenant_id, agent, last_used_at DESC)");
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "busy_timeout", "5000")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -33,7 +62,7 @@ impl JobStore {
         let conn = self.conn.lock().unwrap();
         let tools_json = serde_json::to_string(&job.tools).unwrap_or_else(|_| "[]".into());
         conn.execute(
-            "INSERT INTO jobs (id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+            "INSERT INTO jobs (id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify, session_name) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
             params![
                 job.id,
                 job.tenant_id,
@@ -51,6 +80,7 @@ impl JobStore {
                 job.webhook_sent as i32,
                 job.progress,
                 job.progress_notify as i32,
+                job.session_name,
             ],
         )?;
         Ok(())
@@ -59,7 +89,7 @@ impl JobStore {
     pub fn get(&self, id: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify FROM jobs WHERE id = ?1",
+            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify, session_name FROM jobs WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id])?;
         match rows.next()? {
@@ -130,7 +160,7 @@ impl JobStore {
     pub fn list_by_tenant(&self, tenant_id: &str, limit: usize) -> Result<Vec<Job>, Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify FROM jobs WHERE tenant_id = ?1 ORDER BY created_at DESC LIMIT ?2",
+            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify, session_name FROM jobs WHERE tenant_id = ?1 ORDER BY created_at DESC LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![tenant_id, limit as i64], |row| {
             row_to_job(row).map_err(|e| match e {
@@ -148,7 +178,7 @@ impl JobStore {
     pub fn list_pending_webhooks(&self) -> Result<Vec<Job>, Error> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify FROM jobs WHERE status IN ('completed', 'failed', 'interrupted') AND webhook_sent = 0 AND callback_url != ''",
+            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify, session_name FROM jobs WHERE status IN ('completed', 'failed', 'interrupted') AND webhook_sent = 0 AND callback_url != ''",
         )?;
         let rows = stmt.query_map([], |row| {
             row_to_job(row).map_err(|e| match e {
@@ -171,7 +201,7 @@ impl JobStore {
             params![now],
         )?;
         let mut stmt = conn.prepare(
-            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify FROM jobs WHERE status = 'interrupted' AND error = 'recovered after restart'",
+            "SELECT id, tenant_id, agent, session_id, prompt, status, result, error, tools, created_at, completed_at, callback_url, callback_routing, webhook_sent, progress, progress_notify, session_name FROM jobs WHERE status = 'interrupted' AND error = 'recovered after restart'",
         )?;
         let rows = stmt.query_map([], |row| {
             row_to_job(row).map_err(|e| match e {
@@ -205,6 +235,102 @@ impl JobStore {
         )?;
         Ok(deleted)
     }
+
+    pub fn insert_session(
+        &self,
+        session_id: &str,
+        session_name: &str,
+        tenant_id: &str,
+        agent: &str,
+        acp_session_id: &str,
+    ) -> Result<(), Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT OR REPLACE INTO sessions (session_id, session_name, tenant_id, agent, acp_session_id, created_at, last_used_at, prompt_count) VALUES (?1,?2,?3,?4,?5,?6,?7,0)",
+            params![session_id, session_name, tenant_id, agent, acp_session_id, now, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_session_acp_id(
+        &self,
+        session_id: &str,
+        acp_session_id: &str,
+    ) -> Result<(), Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE sessions SET acp_session_id = ?1 WHERE session_id = ?2",
+            params![acp_session_id, session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_session(&self, session_id: &str) -> Result<(), Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "UPDATE sessions SET last_used_at = ?1, prompt_count = prompt_count + 1 WHERE session_id = ?2",
+            params![now, session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_session_by_name(
+        &self,
+        tenant_id: &str,
+        agent: &str,
+        session_name: &str,
+    ) -> Result<Option<SessionRecord>, Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT session_id, session_name, tenant_id, agent, acp_session_id, created_at, last_used_at, prompt_count FROM sessions WHERE tenant_id = ?1 AND agent = ?2 AND session_name = ?3",
+        )?;
+        let mut rows = stmt.query(params![tenant_id, agent, session_name])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row_to_session(row)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_latest_session(
+        &self,
+        tenant_id: &str,
+        agent: &str,
+    ) -> Result<Option<SessionRecord>, Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT session_id, session_name, tenant_id, agent, acp_session_id, created_at, last_used_at, prompt_count FROM sessions WHERE tenant_id = ?1 AND agent = ?2 ORDER BY last_used_at DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![tenant_id, agent])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row_to_session(row)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn list_sessions(
+        &self,
+        tenant_id: &str,
+        agent: &str,
+        limit: usize,
+    ) -> Result<Vec<SessionRecord>, Error> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT session_id, session_name, tenant_id, agent, acp_session_id, created_at, last_used_at, prompt_count FROM sessions WHERE tenant_id = ?1 AND agent = ?2 ORDER BY last_used_at DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![tenant_id, agent, limit as i64], |row| {
+            row_to_session(row).map_err(|e| match e {
+                Error::Db(db_err) => db_err,
+                _ => rusqlite::Error::InvalidQuery,
+            })
+        })?;
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row?);
+        }
+        Ok(sessions)
+    }
 }
 
 fn row_to_job(row: &rusqlite::Row) -> Result<Job, Error> {
@@ -223,6 +349,7 @@ fn row_to_job(row: &rusqlite::Row) -> Result<Job, Error> {
     let webhook_sent_int: i32 = row.get(13)?;
     let progress: String = row.get(14)?;
     let progress_notify_int: i32 = row.get(15)?;
+    let session_name: String = row.get(16)?;
 
     Ok(Job {
         id: row.get(0)?,
@@ -241,6 +368,20 @@ fn row_to_job(row: &rusqlite::Row) -> Result<Job, Error> {
         webhook_sent: webhook_sent_int != 0,
         progress,
         progress_notify: progress_notify_int != 0,
+        session_name,
+    })
+}
+
+fn row_to_session(row: &rusqlite::Row) -> Result<SessionRecord, Error> {
+    Ok(SessionRecord {
+        session_id: row.get(0)?,
+        session_name: row.get(1)?,
+        tenant_id: row.get(2)?,
+        agent: row.get(3)?,
+        acp_session_id: row.get(4)?,
+        created_at: row.get(5)?,
+        last_used_at: row.get(6)?,
+        prompt_count: row.get(7)?,
     })
 }
 

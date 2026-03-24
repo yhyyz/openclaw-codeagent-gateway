@@ -43,6 +43,7 @@ pub struct Job {
     pub webhook_sent: bool,
     pub progress: String,
     pub progress_notify: bool,
+    pub session_name: String,
 }
 
 impl Job {
@@ -65,6 +66,7 @@ impl Job {
             webhook_sent: false,
             progress: String::new(),
             progress_notify: true,
+            session_name: String::new(),
         }
     }
 
