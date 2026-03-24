@@ -21,9 +21,20 @@
 
 ## 演示
 
-<img src="images/telegram-demo.jpg" alt="Telegram 集成演示" width="400" />
+<table>
+<tr>
+<td align="center"><strong>Telegram</strong></td>
+<td align="center"><strong>飞书</strong></td>
+<td align="center"><strong>飞书</strong></td>
+</tr>
+<tr>
+<td><img src="images/telegram-demo.jpg" alt="Telegram 演示" width="280" /></td>
+<td><img src="images/feishu-demo-1.png" alt="飞书演示 1" width="280" /></td>
+<td><img src="images/feishu-demo-2.png" alt="飞书演示 2" width="280" /></td>
+</tr>
+</table>
 
-> Telegram 集成：异步任务提交、实时工具进度推送、Session 管理和 Token 消耗报告。
+> 异步任务提交、实时工具调用进度、Session 管理和 Token 消耗报告 —— 支持 Telegram、飞书及任何 OpenClaw 接入的渠道。
 
 ## 核心特性
 

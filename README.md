@@ -21,9 +21,20 @@ A Rust-based multi-tenant HTTP gateway that exposes local CLI AI coding agents v
 
 ## Demo
 
-<img src="images/telegram-demo.jpg" alt="Telegram integration demo" width="400" />
+<table>
+<tr>
+<td align="center"><strong>Telegram</strong></td>
+<td align="center"><strong>Feishu</strong></td>
+<td align="center"><strong>Feishu</strong></td>
+</tr>
+<tr>
+<td><img src="images/telegram-demo.jpg" alt="Telegram demo" width="280" /></td>
+<td><img src="images/feishu-demo-1.png" alt="Feishu demo 1" width="280" /></td>
+<td><img src="images/feishu-demo-2.png" alt="Feishu demo 2" width="280" /></td>
+</tr>
+</table>
 
-> Telegram integration: async job submission with real-time tool progress, session management, and token usage reporting.
+> Async job submission with real-time tool progress, session management, and token usage reporting — works across Telegram, Feishu, and any OpenClaw-supported channel.
 
 ## Key Features
 
