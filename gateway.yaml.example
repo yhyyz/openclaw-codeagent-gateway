@@ -1,0 +1,141 @@
+# Agent Gateway configuration template.
+# Copy to gateway.yaml and edit for your environment.
+# Secrets use ${ENV_VAR} syntax — set them in your shell or .env loader.
+
+server:
+  host: "0.0.0.0"
+  port: 8001
+  shutdown_timeout_secs: 30
+  request_timeout_secs: 300
+
+agents:
+  kiro:
+    enabled: true
+    mode: acp
+    command: /usr/local/bin/kiro
+    acp_args: ["--stdio", "-a"]
+    working_dir: /tmp/agw/kiro
+    description: "AWS Kiro — cloud-native coding agent"
+    env:
+      AWS_REGION: us-east-1
+
+  claude:
+    enabled: true
+    mode: acp
+    command: npx
+    acp_args: ["-y", "@zed-industries/claude-agent-acp"]
+    working_dir: /tmp/agw/claude
+    description: "Claude Code agent (via ACP adapter)"
+    env:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+  opencode:
+    enabled: true
+    mode: acp
+    command: /usr/local/bin/opencode
+    acp_args: ["--stdio"]
+    working_dir: /tmp/agw/opencode
+    description: "OpenCode multi-model agent"
+    env:
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+  # PTY-mode agent (experimental, disabled by default)
+  codex:
+    enabled: false
+    mode: pty
+    command: codex
+    pty_args: ["--quiet", "--approval-mode", "full-auto"]
+    working_dir: /tmp/agw/codex
+    description: "OpenAI Codex CLI (PTY mode)"
+    env:
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+
+pool:
+  max_processes: 8
+  max_per_agent: 4
+  idle_timeout_secs: 600
+  watchdog_interval_secs: 10
+  stuck_timeout_secs: 900
+
+store:
+  path: "data/gateway.db"
+  job_retention_secs: 604800  # 7 days
+
+callback:
+  default_url: ""
+  default_token: "${CALLBACK_DEFAULT_TOKEN}"
+  retry_max: 3
+  retry_base_delay_secs: 5
+
+observability:
+  log_level: info            # trace, debug, info, warn, error
+  log_format: json           # json or text
+  metrics_enabled: false
+  audit_path: ""
+
+gateway:
+  allowed_ips: []            # empty = allow all
+  rate_limit:
+    requests_per_minute: 300
+    burst: 10
+
+tenants:
+  # Full-access operations team
+  ops-team:
+    credentials:
+      - token: "${OPS_TEAM_TOKEN_PRIMARY}"
+      - token: "${OPS_TEAM_TOKEN_SECONDARY}"
+    policy:
+      agents:
+        allow: ["*"]
+        deny: []
+      operations:
+        sync_call: true
+        stream: true
+        async_jobs: true
+        session_manage: true
+        admin: true
+      resources:
+        workspace: "/data/workspaces/ops"
+        env_inject:
+          TEAM: ops
+          ENV: production
+        env_deny: ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]
+      quotas:
+        max_concurrent_sessions: 20
+        max_concurrent_jobs: 50
+        max_prompt_length: 65536
+        session_ttl_hours: 48
+      callbacks:
+        allowed_urls: ["https://hooks.example.com/*"]
+        allowed_channels:
+          - channel: slack
+            targets: ["#ops-alerts", "#ops-logs"]
+
+  # Limited developer team
+  dev-team:
+    credentials:
+      - token: "${DEV_TEAM_TOKEN}"
+    policy:
+      agents:
+        allow: ["kiro", "claude", "opencode"]
+        deny: ["codex"]
+      operations:
+        sync_call: true
+        stream: true
+        async_jobs: false
+        session_manage: true
+        admin: false
+      resources:
+        workspace: "/data/workspaces/dev"
+        env_inject:
+          TEAM: dev
+        env_deny: ["AWS_SECRET_ACCESS_KEY"]
+      quotas:
+        max_concurrent_sessions: 5
+        max_concurrent_jobs: 10
+        max_prompt_length: 32768
+        session_ttl_hours: 24
+      callbacks:
+        allowed_urls: []
+        allowed_channels: []

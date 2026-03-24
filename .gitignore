@@ -1,0 +1,34 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# Runtime data
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+audit.jsonl
+
+# Local config (contains secrets)
+gateway.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Sisyphus internal state
+.sisyphus/
+.spec-workflow/
+
+# Node modules (from npx)
+node_modules/
