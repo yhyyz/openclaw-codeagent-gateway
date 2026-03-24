@@ -36,13 +36,13 @@ pub fn format_result(
 
     if session_name.is_empty() {
         parts.push(format!(
-            "[{}] {}",
+            "[{}] job: {}",
             agent,
             &job_id[..job_id.len().min(8)]
         ));
     } else {
         parts.push(format!(
-            "[{}] {} | 🔖 {}",
+            "[{}] job: {} | session: {}",
             agent,
             &job_id[..job_id.len().min(8)],
             session_name
@@ -66,7 +66,7 @@ pub fn format_result(
                     })
                     .collect();
                 tool_strs.sort();
-                parts.push(format!("🔧 {}", tool_strs.join(" | ")));
+                parts.push(format!("⚙️ {}", tool_strs.join(" | ")));
             }
             if !result.is_empty() {
                 parts.push(result.to_string());
@@ -218,7 +218,7 @@ mod tests {
         assert!(out.contains("cache write: 3,711"));
         assert!(out.contains("total: 8,068 tokens"));
         assert!(out.contains("💰 $0.0250"));
-        assert!(out.contains("🔖 test-session"));
+        assert!(out.contains("session: test-session"));
     }
 
     #[test]

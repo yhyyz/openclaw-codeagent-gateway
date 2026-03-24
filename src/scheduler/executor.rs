@@ -65,7 +65,7 @@ pub async fn execute_job(job_id: String, state: AppState) {
     // Send submit confirmation immediately
     if let Some(target) = &callback_target {
         let confirm_msg = format!(
-            "✅ [{}] {} | 🔖 {}",
+            "» [{}] job: {} | session: {}",
             job.agent,
             &job_id[..job_id.len().min(8)],
             job.session_name
@@ -338,7 +338,7 @@ async fn run_acp_prompt(
                                     if job.progress_notify && !tools_notified.contains(&title) {
                                         tools_notified.insert(title.clone());
                                         if let Some(target) = callback_target {
-                                            let msg = format!("\u{23f3} [{}] {} \u{1f527} {}", job.agent, &job_id[..8.min(job_id.len())], title);
+                                            let msg = format!("● [{}] job: {} ⚙️ {}", job.agent, &job_id[..8.min(job_id.len())], title);
                                             let progress_target = target.clone();
                                             tokio::spawn(async move {
                                                 send_progress_webhook(&progress_target, &msg).await;
@@ -352,7 +352,7 @@ async fn run_acp_prompt(
                                         "current_tool": "",
                                         "tool_counts": tool_counts,
                                         "tools_completed": tools_completed_count,
-                                        "last_event": format!("\u{2705} {} ({})", title, status),
+                                        "last_event": format!("✔ {} ({})", title, status),
                                         "updated_at": chrono::Utc::now().timestamp()
                                     }).to_string();
                                     let _ = state.job_store.update_progress(job_id, &progress);
@@ -362,7 +362,7 @@ async fn run_acp_prompt(
                                     let progress = serde_json::json!({
                                         "current_tool": "",
                                         "plan": text,
-                                        "last_event": format!("\u{1f4cb} Plan: {}", truncated),
+                                        "last_event": format!("📋 Plan: {}", truncated),
                                         "updated_at": chrono::Utc::now().timestamp()
                                     }).to_string();
                                     let _ = state.job_store.update_progress(job_id, &progress);
@@ -370,7 +370,7 @@ async fn run_acp_prompt(
                                     if job.progress_notify {
                                         if let Some(target) = callback_target {
                                             let plan_preview = &text[..text.len().min(200)];
-                                            let msg = format!("\u{23f3} [{}] {} \u{1f4cb} {}", job.agent, &job_id[..8.min(job_id.len())], plan_preview);
+                                            let msg = format!("● [{}] job: {} 📋 {}", job.agent, &job_id[..8.min(job_id.len())], plan_preview);
                                             let progress_target = target.clone();
                                             tokio::spawn(async move {
                                                 send_progress_webhook(&progress_target, &msg).await;

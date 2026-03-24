@@ -23,7 +23,7 @@ POST /jobs → get job_id → END TURN (no reply text)
 
 **WRONG (redundant reply):**
 ```
-POST /jobs → reply "✅ Task submitted..." → ...
+POST /jobs → reply "» Task submitted..." → ...
 ```
 
 **WRONG (blocks the session):**
