@@ -1,6 +1,20 @@
 # openclaw-codeagent-gateway
 
-A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP with permission-driven access control, async job execution, and channel-agnostic webhook callbacks.
+A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP API.
+
+### Key Features
+
+- **Async Fire-and-Forget** — Submit jobs via `POST /jobs`, results delivered automatically via webhook callback. No polling, no blocking.
+- **Session Persistence & Reuse** — Agent processes stay alive across prompts. Same session = same context. Session/load restores context even after process restart.
+- **Real-time Progress Tracking** — Tool calls and execution plans pushed to your chat as they happen.
+- **Channel-Agnostic Callbacks** — Works with any messaging platform (Telegram, Discord, Slack, Feishu). Gateway doesn't know or care about the channel.
+- **Multi-Tenant with 5-Dimension Policy** — Agent access, operation permissions, resource isolation, quota limits, and callback restrictions — all per-tenant.
+- **Token Usage Reporting** — Input, output, cache read/write tokens + cost per job (Claude Code full breakdown, OpenCode total).
+- **Process Pool with Auto-Recovery** — Agent subprocesses managed in a pool. Crash detection, auto-rebuild, idle timeout cleanup.
+- **Human-Readable Session Naming** — Sessions named by task content (e.g., `auth-refactor-a1b2`), resumable by name.
+- **Message Splitting** — Long results auto-split for Telegram's 4096 char limit.
+- **SQLite Persistence** — Jobs and sessions survive gateway restarts. WAL mode for concurrent access.
+- **Single Binary, Zero Dependencies** — One 8MB Rust binary. No runtime, no VM, no node_modules.
 
 ## Demo
 
