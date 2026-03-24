@@ -8,8 +8,9 @@ use tracing;
 use crate::dispatch::formatter;
 use crate::scheduler::job::{CallbackTarget, Job};
 
-/// Split a message into chunks of at most `max_len` characters,
+/// Split a message into chunks of at most `max_len` bytes,
 /// preferring to split at newline boundaries.
+/// Safe for multi-byte UTF-8 characters — never splits mid-character.
 pub fn split_message(message: &str, max_len: usize) -> Vec<String> {
     if message.len() <= max_len {
         return vec![message.to_string()];
@@ -21,11 +22,25 @@ pub fn split_message(message: &str, max_len: usize) -> Vec<String> {
             chunks.push(remaining.to_string());
             break;
         }
-        // Try to split at last newline before max_len
-        let split_at = remaining[..max_len].rfind('\n').unwrap_or(max_len);
-        let split_at = if split_at == 0 { max_len } else { split_at };
-        chunks.push(remaining[..split_at].to_string());
-        remaining = remaining[split_at..].trim_start_matches('\n');
+        // Find a safe split point that's a valid UTF-8 char boundary
+        let mut split_at = max_len;
+        while split_at > 0 && !remaining.is_char_boundary(split_at) {
+            split_at -= 1;
+        }
+        if split_at == 0 {
+            // Shouldn't happen with valid UTF-8, but fallback
+            split_at = remaining.len().min(max_len);
+            while split_at < remaining.len() && !remaining.is_char_boundary(split_at) {
+                split_at += 1;
+            }
+        }
+        // Try to split at last newline before split_at
+        let final_split = remaining[..split_at]
+            .rfind('\n')
+            .filter(|&pos| pos > 0)
+            .unwrap_or(split_at);
+        chunks.push(remaining[..final_split].to_string());
+        remaining = remaining[final_split..].trim_start_matches('\n');
     }
     chunks
 }
@@ -298,5 +313,17 @@ mod tests {
         let chunks = split_message("", 3800);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0], "");
+    }
+
+    #[test]
+    fn test_split_message_chinese() {
+        let msg = "你".repeat(2000); // 2000 Chinese chars = 6000 bytes
+        let chunks = split_message(&msg, 3800);
+        assert!(chunks.len() >= 2);
+        for chunk in &chunks {
+            assert!(chunk.len() <= 3800);
+        }
+        let reassembled: String = chunks.join("");
+        assert_eq!(reassembled, msg);
     }
 }
