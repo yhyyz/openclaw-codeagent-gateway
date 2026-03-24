@@ -80,12 +80,32 @@ pub async fn submit_job(
     Json(req): Json<JobSubmitRequest>,
 ) -> Result<(StatusCode, Json<Value>), Error> {
     // Validate agent
-    let _agent_cfg = state
+    let agent_cfg = state
         .config
         .agents
         .get(&req.agent)
         .filter(|a| a.enabled)
         .ok_or_else(|| Error::AgentNotFound(req.agent.clone()))?;
+
+    // Pre-flight: verify agent command exists in PATH
+    let check_cmd = agent_cfg
+        .command
+        .split_whitespace()
+        .next()
+        .unwrap_or(&agent_cfg.command);
+    if std::process::Command::new("which")
+        .arg(check_cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| !s.success())
+        .unwrap_or(true)
+    {
+        return Err(Error::AgentNotFound(format!(
+            "agent '{}' command '{}' not found in PATH. Install it first — see README for instructions.",
+            req.agent, check_cmd
+        )));
+    }
 
     if !tenant
         .policy

@@ -49,10 +49,44 @@ cargo build --release
 
 ### Prerequisites
 
-- At least one ACP-compatible CLI agent installed:
-  - Kiro: `kiro-cli acp -a`
-  - Claude Code: `npx -y @zed-industries/claude-agent-acp`
-  - OpenCode: `opencode acp`
+#### Required: At least one AI coding agent
+
+The gateway proxies requests to CLI AI agents. You must install at least one before using the gateway.
+
+| Agent | Install Command | Verify |
+|-------|----------------|--------|
+| **OpenCode** | `npm install -g opencode-ai` | `opencode --version` |
+| **Claude Code** | `npm install -g @anthropic-ai/claude-code` | `claude --version` |
+| **Kiro** | See [kiro.dev/docs/cli](https://kiro.dev/docs/cli) | `kiro-cli --version` |
+
+> **Note**: You don't need all three — install only the agents you want to use. Disable others in `gateway.yaml` with `enabled: false`.
+
+#### ACP Adapters
+
+Some agents need an ACP protocol adapter:
+
+| Agent | ACP Command | Adapter |
+|-------|-------------|---------|
+| OpenCode | `opencode acp` | Built-in (no extra install) |
+| Claude Code | `npx -y @zed-industries/claude-agent-acp` | Auto-downloaded on first use via npx |
+| Kiro | `kiro-cli acp -a` | Built-in (no extra install) |
+
+#### Verify agent works
+
+Before starting the gateway, test each agent's ACP mode:
+
+```bash
+# OpenCode
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' | opencode acp
+
+# Claude Code (first run downloads adapter)
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' | npx -y @zed-industries/claude-agent-acp
+
+# Kiro
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}' | kiro-cli acp -a
+```
+
+Each should return a JSON response with `"result"` containing `"agentInfo"`. If you get `command not found`, install the agent first.
 
 ### Run
 

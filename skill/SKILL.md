@@ -226,7 +226,30 @@ curl -sf "$AGW_URL/health" | jq .
 curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/agents" | jq .
 ```
 
-### 3. Submit a job (with callback — REQUIRED)
+### 3. Pre-flight check
+
+Before submitting any job, verify the target agent is available:
+
+```bash
+curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/agents" | jq '.agents[] | select(.name=="opencode")'
+```
+
+If the agent is not in the list, it's either:
+1. Not installed on the gateway machine → tell the user to install it
+2. Disabled in gateway.yaml → tell the user to enable it
+3. Not in the tenant's allow list → tell the user to contact the admin
+
+**Agent installation commands** (run these on the machine where agw is running):
+
+| Agent | Install |
+|-------|---------|
+| OpenCode | `npm install -g opencode-ai` |
+| Claude Code | `npm install -g @anthropic-ai/claude-code` (adapter auto-downloads via npx) |
+| Kiro | See https://kiro.dev/docs/cli |
+
+If the user asks to use an agent that's not available, inform them which agents ARE available and how to install the missing one.
+
+### 4. Submit a job (with callback — REQUIRED)
 
 ```bash
 curl -sf -X POST "$AGW_URL/jobs" \
