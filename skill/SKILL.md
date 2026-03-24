@@ -70,11 +70,30 @@ curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/sessions/<agent>" | jq 
 
 Returns recent sessions with names and prompt counts.
 
-### Generating session names
-When submitting a job, generate a short English session name (2-4 words, hyphenated) that describes the task:
-- "analyze code structure" → `session_name: "code-structure-analysis"`
-- "check disk usage" → `session_name: "disk-usage"`
-- "help me with auth" → `session_name: "auth-help"`
+### Naming sessions
+
+When submitting a job, generate a `session_name` that describes the TASK CONTENT — what the user wants to accomplish. Use 2-4 English words, hyphenated, lowercase. The gateway will automatically append a short unique suffix.
+
+**Good names** (describe the task):
+| User prompt | session_name |
+|-------------|-------------|
+| "帮我分析 Palantir 的 AIP 平台" | `palantir-aip-analysis` |
+| "重构 auth 模块的权限检查" | `auth-refactor` |
+| "查看磁盘空间使用情况" | `disk-usage-check` |
+| "搜索 EMR Serverless 的最新文档" | `emr-serverless-docs` |
+| "写一个 Python 脚本处理 CSV" | `csv-processing-script` |
+| "Review this PR for security issues" | `security-pr-review` |
+
+**Bad names** (don't describe the task):
+| ❌ Bad | Why |
+|--------|-----|
+| `start-completely-fresh` | Describes the action, not the content |
+| `new-conversation` | Generic, says nothing about the task |
+| `help-me` | Too vague |
+| `opencode-task` | Just the agent name |
+| `session-1` | Sequential number, meaningless |
+
+The name should answer: "If I see this name in a list of sessions, will I know what this conversation was about?"
 
 ## Server Installation
 

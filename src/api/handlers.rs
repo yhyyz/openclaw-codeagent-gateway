@@ -149,6 +149,13 @@ pub async fn submit_job(
         }
     };
 
+    // Append session_id prefix for uniqueness
+    let session_name = if is_new {
+        format!("{}-{}", session_name, &session_id[..session_id.len().min(4)])
+    } else {
+        session_name // Don't rename existing sessions
+    };
+
     if is_new {
         state
             .job_store
