@@ -7,7 +7,7 @@ use crate::app::AppState;
 use crate::auth::policy::ExecutionContext;
 use crate::config::AgentConfig;
 use crate::runtime::event::AgentEvent;
-use crate::runtime::protocol::{build_initialize, build_prompt, build_session_new};
+use crate::runtime::protocol::{build_initialize, build_prompt, build_session_load, build_session_new};
 use crate::scheduler::job::{CallbackRequest, CallbackTarget, Job, JobStatus};
 use tokio::sync::broadcast;
 
@@ -64,7 +64,12 @@ pub async fn execute_job(job_id: String, state: AppState) {
 
     // Send submit confirmation immediately
     if let Some(target) = &callback_target {
-        let confirm_msg = format!("✅ [{}] {} 任务已提交，结果将自动推送", job.agent, &job_id[..job_id.len().min(8)]);
+        let confirm_msg = format!(
+            "✅ [{}] {} | 🔖 {}",
+            job.agent,
+            &job_id[..job_id.len().min(8)],
+            job.session_name
+        );
         send_progress_webhook(target, &confirm_msg).await;
     }
 
@@ -186,31 +191,48 @@ async fn run_acp_prompt(
         }
     }
 
-    let mut acp_session_id = String::from("default");
+    let existing_acp_session = state
+        .job_store
+        .get_session_by_name(&job.tenant_id, &job.agent, &job.session_name)
+        .ok()
+        .flatten()
+        .and_then(|r| {
+            if r.acp_session_id.is_empty() {
+                None
+            } else {
+                Some(r.acp_session_id)
+            }
+        });
 
-    let session_new_req =
-        build_session_new(process.next_id(), &context.workspace.to_string_lossy());
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        process.send_rpc(&session_new_req),
-    )
-    .await
-    {
-        Ok(Ok(resp)) => {
-            if let Some(result) = &resp.result {
-                if let Some(sid) = result.get("sessionId").and_then(|v| v.as_str()) {
-                    tracing::debug!(job_id = %job_id, acp_session = %sid, "ACP session created");
-                    acp_session_id = sid.to_string();
-                }
+    let acp_session_id = if let Some(existing_id) = existing_acp_session {
+        let load_req = build_session_load(
+            process.next_id(),
+            &existing_id,
+            &context.workspace.to_string_lossy(),
+        );
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            process.send_rpc(&load_req),
+        )
+        .await
+        {
+            Ok(Ok(resp)) if resp.error.is_none() => {
+                tracing::info!(job_id = %job_id, acp_session = %existing_id, "ACP session loaded");
+                existing_id
+            }
+            _ => {
+                tracing::warn!(job_id = %job_id, "ACP session/load failed, creating new");
+                create_new_acp_session(&process, &context, job_id).await?
             }
         }
-        Ok(Err(e)) => {
-            tracing::warn!(job_id = %job_id, error = %e, "ACP session/new failed, trying prompt anyway");
-        }
-        Err(_) => {
-            return Err("ACP session/new timeout (30s)".into());
-        }
-    }
+    } else {
+        create_new_acp_session(&process, &context, job_id).await?
+    };
+
+    let _ = state
+        .job_store
+        .update_session_acp_id(&job.session_id, &acp_session_id);
+    let _ = state.job_store.touch_session(&job.session_id);
 
     let mut event_rx = process.subscribe();
 
@@ -385,6 +407,36 @@ async fn run_acp_prompt(
         cost_usd: usage_cost,
         ..Default::default()
     })
+}
+
+async fn create_new_acp_session(
+    process: &crate::runtime::process::AgentProcess,
+    context: &crate::auth::policy::ExecutionContext,
+    job_id: &str,
+) -> Result<String, String> {
+    let session_new_req =
+        build_session_new(process.next_id(), &context.workspace.to_string_lossy());
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        process.send_rpc(&session_new_req),
+    )
+    .await
+    {
+        Ok(Ok(resp)) => {
+            if let Some(result) = &resp.result {
+                if let Some(sid) = result.get("sessionId").and_then(|v| v.as_str()) {
+                    tracing::debug!(job_id = %job_id, acp_session = %sid, "ACP session created");
+                    return Ok(sid.to_string());
+                }
+            }
+            Ok("default".to_string())
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(job_id = %job_id, error = %e, "ACP session/new failed, using default");
+            Ok("default".to_string())
+        }
+        Err(_) => Err("ACP session/new timeout (30s)".into()),
+    }
 }
 
 async fn send_progress_webhook(target: &CallbackTarget, message: &str) {

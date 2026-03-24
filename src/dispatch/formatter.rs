@@ -30,14 +30,24 @@ pub fn format_result(
     cache_write_tokens: u64,
     total_tokens: u64,
     cost_usd: f64,
+    session_name: &str,
 ) -> String {
     let mut parts = Vec::new();
 
-    parts.push(format!(
-        "[{}] {}",
-        agent,
-        &job_id[..job_id.len().min(8)]
-    ));
+    if session_name.is_empty() {
+        parts.push(format!(
+            "[{}] {}",
+            agent,
+            &job_id[..job_id.len().min(8)]
+        ));
+    } else {
+        parts.push(format!(
+            "[{}] {} | 🔖 {}",
+            agent,
+            &job_id[..job_id.len().min(8)],
+            session_name
+        ));
+    }
 
     match status {
         "failed" | "interrupted" => {
@@ -109,7 +119,7 @@ mod tests {
     fn format_completed_with_result() {
         let out = format_result(
             "kiro", "abcdefghij", "completed", "Done!", "",
-            &HashMap::new(), 1.5, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 1.5, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("[kiro]"));
         assert!(out.contains("abcdefgh"));
@@ -121,7 +131,7 @@ mod tests {
     fn format_failed() {
         let out = format_result(
             "codex", "job12345", "failed", "", "OOM killed",
-            &HashMap::new(), 3.0, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 3.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("❌ OOM killed"));
         assert!(out.contains("⏱ 3s"));
@@ -134,7 +144,7 @@ mod tests {
         tools.insert("write_file".into(), 1);
         let out = format_result(
             "kiro", "job-abcd", "completed", "ok", "",
-            &tools, 2.0, 0, 0, 0, 0, 0, 0.0,
+            &tools, 2.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("read_file ×2"));
         assert!(out.contains("write_file"));
@@ -145,7 +155,7 @@ mod tests {
     fn truncates_job_id_to_8_chars() {
         let out = format_result(
             "a", "123456789012", "completed", "", "",
-            &HashMap::new(), 0.1, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 0.1, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("12345678"));
         assert!(!out.contains("9012"));
@@ -155,7 +165,7 @@ mod tests {
     fn short_job_id_not_padded() {
         let out = format_result(
             "a", "abc", "completed", "", "",
-            &HashMap::new(), 0.1, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 0.1, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("abc"));
     }
@@ -166,7 +176,7 @@ mod tests {
         tools.insert("bash".into(), 1);
         let out = format_result(
             "agent", "jobid123", "completed", "result text", "",
-            &tools, 5.5, 0, 0, 0, 0, 0, 0.0,
+            &tools, 5.5, 0, 0, 0, 0, 0, 0.0, "",
         );
         let lower = out.to_lowercase();
         assert!(!lower.contains("discord"));
@@ -179,7 +189,7 @@ mod tests {
     fn interrupted_shows_error() {
         let out = format_result(
             "a", "job-1234", "interrupted", "", "timed out",
-            &HashMap::new(), 30.0, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 30.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("❌ timed out"));
     }
@@ -188,7 +198,7 @@ mod tests {
     fn agent_name_uses_bracket_format() {
         let out = format_result(
             "Claude", "abcd1234", "completed", "hello", "",
-            &HashMap::new(), 5.0, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 5.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(out.contains("[Claude]"));
         assert!(!out.contains("**Claude**"));
@@ -199,7 +209,7 @@ mod tests {
         let out = format_result(
             "claude", "abcd1234", "completed", "done", "",
             &HashMap::new(), 15.0,
-            3, 5, 4349, 3711, 8068, 0.025,
+            3, 5, 4349, 3711, 8068, 0.025, "test-session",
         );
         assert!(out.contains("📊"));
         assert!(out.contains("input: 3"));
@@ -208,13 +218,14 @@ mod tests {
         assert!(out.contains("cache write: 3,711"));
         assert!(out.contains("total: 8,068 tokens"));
         assert!(out.contains("💰 $0.0250"));
+        assert!(out.contains("🔖 test-session"));
     }
 
     #[test]
     fn no_token_usage_when_zero() {
         let out = format_result(
             "claude", "abcd1234", "completed", "done", "",
-            &HashMap::new(), 15.0, 0, 0, 0, 0, 0, 0.0,
+            &HashMap::new(), 15.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         assert!(!out.contains("📊"));
         assert!(!out.contains("💰"));
@@ -224,7 +235,7 @@ mod tests {
     fn no_cost_when_zero() {
         let out = format_result(
             "claude", "abcd1234", "completed", "done", "",
-            &HashMap::new(), 15.0, 10, 20, 0, 0, 30, 0.0,
+            &HashMap::new(), 15.0, 10, 20, 0, 0, 30, 0.0, "",
         );
         assert!(out.contains("📊"));
         assert!(!out.contains("💰"));
@@ -258,7 +269,7 @@ mod tests {
         tools.insert("a_tool".into(), 3);
         let out = format_result(
             "a", "job-abcd", "completed", "", "",
-            &tools, 1.0, 0, 0, 0, 0, 0, 0.0,
+            &tools, 1.0, 0, 0, 0, 0, 0, 0.0, "",
         );
         let z_pos = out.find("z_tool").unwrap();
         let a_pos = out.find("a_tool").unwrap();

@@ -94,6 +94,7 @@ impl WebhookDispatcher {
             cache_write_tokens,
             total_tokens,
             cost_usd,
+            &job.session_name,
         );
         serde_json::json!({
             "tool": "message",
