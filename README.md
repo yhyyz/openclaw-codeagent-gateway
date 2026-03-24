@@ -1,8 +1,31 @@
-# openclaw-codeagent-gateway
+<div align="center">
 
-A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code, OpenCode) over HTTP API.
+# ⚡ openclaw-codeagent-gateway
 
-### Key Features
+**Multi-Tenant AI Coding Agent HTTP Gateway for OpenClaw**
+
+---
+
+*Route AI coding tasks from Telegram, Feishu, Discord to Kiro, Claude Code, OpenCode — async execution, session reuse, real-time progress.*
+
+A Rust-based multi-tenant HTTP gateway that exposes local CLI AI coding agents via ACP protocol, with async job execution, session persistence, and channel-agnostic webhook callbacks.
+
+[![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-Skill-green)](https://github.com/yhyyz/openclaw-codeagent-gateway)
+[![Rust](https://img.shields.io/badge/Rust-1.80+-orange)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-lightgrey)]()
+
+[English](README.md) | [中文](README.zh-CN.md)
+
+</div>
+
+## Demo
+
+<img src="images/telegram-demo.jpg" alt="Telegram integration demo" width="400" />
+
+> Telegram integration: async job submission with real-time tool progress, session management, and token usage reporting.
+
+## Key Features
 
 - **Async Fire-and-Forget** — Submit jobs via `POST /jobs`, results delivered automatically via webhook callback. No polling, no blocking.
 - **Session Persistence & Reuse** — Agent processes stay alive across prompts. Same session = same context. Session/load restores context even after process restart.
@@ -15,12 +38,6 @@ A multi-tenant HTTP gateway that exposes local CLI AI agents (Kiro, Claude Code,
 - **Message Splitting** — Long results auto-split for Telegram's 4096 char limit.
 - **SQLite Persistence** — Jobs and sessions survive gateway restarts. WAL mode for concurrent access.
 - **Single Binary, Zero Dependencies** — One 8MB Rust binary. No runtime, no VM, no node_modules.
-
-## Demo
-
-<img src="images/telegram-demo.jpg" alt="Telegram integration demo — async job submission, progress tracking, and result delivery" width="400" />
-
-> Telegram integration: async job submission with real-time tool progress, session management, and token usage reporting.
 
 > **Platform**: Linux x86_64 only (pre-built binary). Build from source on other platforms with `cargo build --release`.
 
