@@ -8,6 +8,28 @@ use tracing;
 use crate::dispatch::formatter;
 use crate::scheduler::job::{CallbackTarget, Job};
 
+/// Split a message into chunks of at most `max_len` characters,
+/// preferring to split at newline boundaries.
+pub fn split_message(message: &str, max_len: usize) -> Vec<String> {
+    if message.len() <= max_len {
+        return vec![message.to_string()];
+    }
+    let mut chunks = Vec::new();
+    let mut remaining = message;
+    while !remaining.is_empty() {
+        if remaining.len() <= max_len {
+            chunks.push(remaining.to_string());
+            break;
+        }
+        // Try to split at last newline before max_len
+        let split_at = remaining[..max_len].rfind('\n').unwrap_or(max_len);
+        let split_at = if split_at == 0 { max_len } else { split_at };
+        chunks.push(remaining[..split_at].to_string());
+        remaining = remaining[split_at..].trim_start_matches('\n');
+    }
+    chunks
+}
+
 pub struct WebhookDispatcher {
     client: Client,
     max_retries: u32,
@@ -72,9 +94,41 @@ impl WebhookDispatcher {
 
     pub async fn deliver(&self, target: &CallbackTarget, job: &Job) -> bool {
         let payload = Self::build_payload(target, job);
+        let message = payload["args"]["message"].as_str().unwrap_or_default();
+        let chunks = split_message(message, 3800);
 
+        for (i, chunk) in chunks.iter().enumerate() {
+            let chunk_payload = serde_json::json!({
+                "tool": "message",
+                "args": {
+                    "action": "send",
+                    "channel": target.routing.channel,
+                    "target": target.routing.target,
+                    "message": chunk,
+                },
+                "sessionKey": "main"
+            });
+
+            let sent = self.send_single_payload(target, &chunk_payload, &job.id).await;
+            if !sent {
+                return false;
+            }
+
+            if i < chunks.len() - 1 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        true
+    }
+
+    async fn send_single_payload(
+        &self,
+        target: &CallbackTarget,
+        payload: &serde_json::Value,
+        job_id: &str,
+    ) -> bool {
         for attempt in 0..=self.max_retries {
-            let mut req = self.client.post(&target.url).json(&payload);
+            let mut req = self.client.post(&target.url).json(payload);
             if let Some(token) = &target.token {
                 req = req.bearer_auth(token);
             }
@@ -83,14 +137,14 @@ impl WebhookDispatcher {
 
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    tracing::info!(job_id = %job.id, attempt, "webhook delivered");
+                    tracing::info!(job_id = %job_id, attempt, "webhook delivered");
                     return true;
                 }
                 Ok(resp) => {
-                    tracing::warn!(job_id = %job.id, status = %resp.status(), attempt, "webhook rejected");
+                    tracing::warn!(job_id = %job_id, status = %resp.status(), attempt, "webhook rejected");
                 }
                 Err(e) => {
-                    tracing::warn!(job_id = %job.id, error = %e, attempt, "webhook failed");
+                    tracing::warn!(job_id = %job_id, error = %e, attempt, "webhook failed");
                 }
             }
             if attempt < self.max_retries {
@@ -192,5 +246,57 @@ mod tests {
         assert!(payload["args"].get("channel").is_some());
         assert!(payload["args"].get("target").is_some());
         assert!(payload["args"].get("message").is_some());
+    }
+
+    #[test]
+    fn split_message_short_returns_single() {
+        let msg = "Hello, world!";
+        let chunks = split_message(msg, 3800);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], msg);
+    }
+
+    #[test]
+    fn split_message_exact_limit_returns_single() {
+        let msg = "a".repeat(3800);
+        let chunks = split_message(&msg, 3800);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], msg);
+    }
+
+    #[test]
+    fn split_message_splits_at_newlines() {
+        let line = "x".repeat(100);
+        let mut lines = Vec::new();
+        for _ in 0..50 {
+            lines.push(line.clone());
+        }
+        let msg = lines.join("\n");
+        assert!(msg.len() > 3800);
+
+        let chunks = split_message(&msg, 3800);
+        assert!(chunks.len() >= 2);
+        for chunk in &chunks {
+            assert!(chunk.len() <= 3800);
+        }
+        let rejoined = chunks.join("\n");
+        assert_eq!(rejoined, msg);
+    }
+
+    #[test]
+    fn split_message_no_newlines_splits_at_max() {
+        let msg = "a".repeat(8000);
+        let chunks = split_message(&msg, 3800);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].len(), 3800);
+        assert_eq!(chunks[1].len(), 3800);
+        assert_eq!(chunks[2].len(), 400);
+    }
+
+    #[test]
+    fn split_message_empty_returns_single() {
+        let chunks = split_message("", 3800);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
     }
 }

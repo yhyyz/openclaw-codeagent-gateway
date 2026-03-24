@@ -398,32 +398,40 @@ async fn run_acp_prompt(
 }
 
 async fn send_progress_webhook(target: &CallbackTarget, message: &str) {
-    let payload = serde_json::json!({
-        "tool": "message",
-        "args": {
-            "action": "send",
-            "channel": target.routing.channel,
-            "target": target.routing.target,
-            "message": message,
-        },
-        "sessionKey": "main"
-    });
+    let chunks = crate::dispatch::webhook::split_message(message, 3800);
 
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Ok(ct) = "application/json".parse() {
-        headers.insert("Content-Type", ct);
-    }
-    if let Some(token) = &target.token {
-        if let Ok(auth) = format!("Bearer {}", token).parse() {
-            headers.insert("Authorization", auth);
+    for (i, chunk) in chunks.iter().enumerate() {
+        let payload = serde_json::json!({
+            "tool": "message",
+            "args": {
+                "action": "send",
+                "channel": target.routing.channel,
+                "target": target.routing.target,
+                "message": chunk,
+            },
+            "sessionKey": "main"
+        });
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(ct) = "application/json".parse() {
+            headers.insert("Content-Type", ct);
+        }
+        if let Some(token) = &target.token {
+            if let Ok(auth) = format!("Bearer {}", token).parse() {
+                headers.insert("Authorization", auth);
+            }
+        }
+
+        let client = reqwest::Client::new();
+        let _ = client
+            .post(&target.url)
+            .headers(headers)
+            .json(&payload)
+            .send()
+            .await;
+
+        if i < chunks.len() - 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     }
-
-    let client = reqwest::Client::new();
-    let _ = client
-        .post(&target.url)
-        .headers(headers)
-        .json(&payload)
-        .send()
-        .await;
 }
