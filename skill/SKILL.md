@@ -63,6 +63,39 @@ Force a fresh session with no prior context:
 
 Use when the user says "new conversation", "start fresh", "forget everything", etc.
 
+### IMPORTANT: When to use new_session
+
+**Always set `"new_session": true` when the user's request is about a NEW, UNRELATED topic.** The gateway will otherwise auto-resume the last session, which means the agent keeps old context that may confuse the response.
+
+Trigger phrases for `new_session: true`:
+- "新对话", "新session", "创建新的session", "new session", "start fresh"
+- "换个话题", "new topic", "forget previous"
+- When the user asks about something completely unrelated to the previous conversation
+- When the user explicitly names a different task than what the last session was about
+
+Trigger phrases for resuming (do NOT set new_session):
+- "继续", "continue", "上次说到哪了"
+- "还是那个话题", "接着上面的"
+- When the user references something from a previous conversation
+
+**When in doubt, use `new_session: true`** — it's safer to start fresh than to carry stale context.
+
+Example — user says "搜索 EMR serverless storage 内容":
+```json
+{
+  "agent": "opencode",
+  "prompt": "搜索 EMR serverless storage 内容",
+  "new_session": true,
+  "session_name": "emr-serverless-storage",
+  "callback": {
+    "channel": "telegram",
+    "target": "tg:1704924315",
+    "account_id": "default"
+  }
+}
+```
+This is a new research topic → must be `new_session: true`.
+
 ### List sessions
 ```bash
 curl -sf -H "Authorization: Bearer $AGW_TOKEN" "$AGW_URL/sessions/<agent>" | jq .
