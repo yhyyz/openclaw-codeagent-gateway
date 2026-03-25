@@ -27,6 +27,8 @@ pub struct JobSubmitRequest {
     pub session_name: Option<String>,
     #[serde(default)]
     pub new_session: bool,
+    #[serde(default)]
+    pub external_session_id: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -132,25 +134,33 @@ pub async fn submit_job(
         )));
     }
 
-    let (session_id, session_name, is_new) = if req.new_session {
+    let (session_id, session_name, is_new, external_acp_id) = if let Some(ref ext_id) = req.external_session_id {
+        // Attaching to an external ACP session (e.g. standalone opencode)
+        let sid = uuid::Uuid::new_v4().to_string();
+        let name = req
+            .session_name
+            .clone()
+            .unwrap_or_else(|| format!("external-{}", &ext_id[..ext_id.len().min(12)]));
+        (sid, name, true, Some(ext_id.clone()))
+    } else if req.new_session {
         let sid = req
             .session_id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let name = req
             .session_name
             .unwrap_or_else(|| generate_fallback_name(&req.prompt));
-        (sid, name, true)
+        (sid, name, true, None)
     } else if let Some(name) = &req.session_name {
         match state
             .job_store
             .get_session_by_name(&tenant.id, &req.agent, name)?
         {
-            Some(rec) => (rec.session_id, rec.session_name, false),
+            Some(rec) => (rec.session_id, rec.session_name, false, None),
             None => {
                 let sid = req
                     .session_id
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                (sid, name.clone(), true)
+                (sid, name.clone(), true, None)
             }
         }
     } else {
@@ -158,13 +168,13 @@ pub async fn submit_job(
             .job_store
             .get_latest_session(&tenant.id, &req.agent)?
         {
-            Some(rec) => (rec.session_id, rec.session_name, false),
+            Some(rec) => (rec.session_id, rec.session_name, false, None),
             None => {
                 let sid = req
                     .session_id
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 let name = generate_fallback_name(&req.prompt);
-                (sid, name, true)
+                (sid, name, true, None)
             }
         }
     };
@@ -177,9 +187,10 @@ pub async fn submit_job(
     };
 
     if is_new {
+        let acp_id = external_acp_id.as_deref().unwrap_or("");
         state
             .job_store
-            .insert_session(&session_id, &session_name, &tenant.id, &req.agent, "")?;
+            .insert_session(&session_id, &session_name, &tenant.id, &req.agent, acp_id)?;
     }
 
     let mut job = Job::new(&tenant.id, &req.agent, &session_id, &req.prompt);

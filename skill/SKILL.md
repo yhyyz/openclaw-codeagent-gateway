@@ -88,6 +88,26 @@ Force a fresh session with no prior context:
 
 Use only when the user explicitly says "new conversation", "start fresh", "forget everything", etc.
 
+### Attach to external session
+
+If the user has an existing session from a standalone agent instance (e.g., started opencode directly on the server), you can attach to it:
+
+```json
+{
+  "agent": "opencode",
+  "prompt": "Continue the previous analysis",
+  "external_session_id": "ses_2dfb38a4bffeAIbAA0rHdJT5dO",
+  "session_name": "external-analysis"
+}
+```
+
+The gateway will load the external session's context via ACP `session/load`. The agent remembers all previous conversation history from that session.
+
+Use when:
+- User says "connect to my session ses_xxx"
+- User wants to continue work started in a standalone opencode/claude instance
+- User provides an ACP session ID explicitly
+
 Example — user says "搜索 EMR serverless storage 内容" as a follow-up in an ongoing conversation:
 ```json
 {
@@ -286,6 +306,7 @@ Response: `202 Accepted` with `job_id`, `status: "pending"`, `session_id`, `sess
 | `callback` | yes* | — | Webhook routing (*without it, results are lost) |
 | `session_name` | no | auto-generated | Human-readable session name for resume |
 | `new_session` | no | `false` | Force a fresh session |
+| `external_session_id` | no | — | Attach to an external ACP session by its ID |
 | `session_id` | no | auto-generated | Low-level session ID override |
 | `progress_notify` | no | `true` | `false` for silent mode (only final result delivered) |
 
